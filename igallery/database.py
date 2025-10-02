@@ -149,6 +149,39 @@ class Database:
             )
             conn.commit()
 
+    def sync_images(self, image_paths: list[str]):
+        """Sync image metadata for all images, using mtime for new entries.
+
+        Args:
+            image_paths: List of all image paths to sync
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            for path in image_paths:
+                # Check if record exists
+                cursor.execute(
+                    "SELECT image_path FROM image_metadata WHERE image_path = ?",
+                    (path,)
+                )
+                if not cursor.fetchone():
+                    # New image - insert with mtime as last_viewed_at
+                    try:
+                        from pathlib import Path
+                        mtime = Path(path).stat().st_mtime
+                        cursor.execute(
+                            """
+                            INSERT INTO image_metadata (image_path, last_viewed_at, view_count)
+                            VALUES (?, ?, 0)
+                            """,
+                            (path, mtime)
+                        )
+                    except (OSError, FileNotFoundError):
+                        # If file doesn't exist, skip it
+                        pass
+
+            conn.commit()
+
     def record_view(self, image_path: str):
         """Record that an image was viewed.
 
@@ -172,7 +205,7 @@ class Database:
     def get_least_recently_viewed(self, image_paths: list[str]) -> Optional[str]:
         """Get the least recently viewed image from a list.
 
-        For images without view records, uses file mtime as the effective view time.
+        Assumes all images have been synced to the database first.
 
         Args:
             image_paths: List of image paths to consider
@@ -186,33 +219,26 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
-            # Get all images with their view times or mtime for unviewed
-            image_times = []
-            for path in image_paths:
-                cursor.execute(
-                    "SELECT last_viewed_at FROM image_metadata WHERE image_path = ?",
-                    (path,)
-                )
-                row = cursor.fetchone()
+            # Create placeholders for SQL IN clause
+            placeholders = ','.join('?' * len(image_paths))
 
-                if row:
-                    # Use last viewed time
-                    image_times.append((path, row['last_viewed_at']))
-                else:
-                    # Use file modification time for unviewed images
-                    try:
-                        from pathlib import Path
-                        mtime = Path(path).stat().st_mtime
-                        image_times.append((path, mtime))
-                    except (OSError, FileNotFoundError):
-                        # If file doesn't exist, use epoch time
-                        image_times.append((path, 0))
+            # Query for the image with the oldest last_viewed_at among the provided paths
+            cursor.execute(
+                f"""
+                SELECT image_path, last_viewed_at
+                FROM image_metadata
+                WHERE image_path IN ({placeholders})
+                ORDER BY last_viewed_at ASC
+                LIMIT 1
+                """,
+                image_paths
+            )
 
-            # Sort by time (ascending) and return the oldest
-            if image_times:
-                image_times.sort(key=lambda x: x[1])
-                return image_times[0][0]
+            row = cursor.fetchone()
+            if row:
+                return row['image_path']
 
+            # Fallback: return first image if no records found
             return image_paths[0] if image_paths else None
 
     def delete_thumbnail_record(self, image_path: str):

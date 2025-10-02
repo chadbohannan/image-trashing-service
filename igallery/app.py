@@ -228,6 +228,10 @@ def create_app(
         if not images:
             return jsonify({'error': 'No images found'}), 404
 
+        # Sync images on slideshow mode (ensures all images have metadata)
+        if mode == 'slideshow':
+            db.sync_images(images)
+
         # Select image based on mode
         if mode == 'random':
             selected_image = random.choice(images)
@@ -437,14 +441,14 @@ def main():
     parser = argparse.ArgumentParser(description='iGallery - Image Gallery Service')
     parser.add_argument(
         '--host',
-        default='127.0.0.1',
-        help='Host to bind to (default: 127.0.0.1)'
+        default='0.0.0.0',
+        help='Host to bind to (default: 0.0.0.0)'
     )
     parser.add_argument(
         '--port',
         type=int,
-        default=5000,
-        help='Port to bind to (default: 5000)'
+        default=8000,
+        help='Port to bind to (default: 8000)'
     )
     parser.add_argument(
         '--gallery-root',

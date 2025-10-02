@@ -26,7 +26,7 @@ class ThumbnailService:
     def get_or_create_thumbnail(
         self,
         image_path: str,
-        size: Tuple[int, int] = (300, 300)
+        size: Tuple[int, int] = (100, 100)
     ) -> bytes:
         """Get cached thumbnail or create new one.
 

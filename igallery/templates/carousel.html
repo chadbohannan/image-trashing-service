@@ -246,7 +246,7 @@
 
     <!-- Main image area -->
     <div class="carousel-image-wrapper">
-        <div class="loading" id="loading">Press Space or → to start</div>
+        <div class="loading" id="loading"></div>
         <img class="carousel-image hidden" id="carousel-image" src="" alt="">
     </div>
 
@@ -642,5 +642,8 @@ document.addEventListener('mousemove', function() {
 
 // Show controls on page load briefly
 setTimeout(showControls, 100);
+
+// Automatically load the first image when page loads
+nextImage();
 </script>
 {% endblock %}
