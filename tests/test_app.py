@@ -91,18 +91,9 @@ class TestWebRoutes:
         response = client.get('/carousel')
         assert response.status_code == 200
 
-    def test_carousel_next_random(self, client):
-        """Test carousel random next endpoint."""
-        response = client.get('/carousel/next?mode=random')
-        assert response.status_code == 200
-
-        data = json.loads(response.data)
-        assert 'image_url' in data
-        assert 'image_name' in data
-
     def test_carousel_next_slideshow(self, client):
         """Test carousel slideshow next endpoint."""
-        response = client.get('/carousel/next?mode=slideshow')
+        response = client.get('/carousel/next')
         assert response.status_code == 200
 
         data = json.loads(response.data)
@@ -110,11 +101,11 @@ class TestWebRoutes:
         assert 'image_name' in data
 
     def test_carousel_slideshow_returns_least_viewed(self, client):
-        """Test that slideshow mode returns least recently viewed images."""
+        """Test that carousel returns least recently viewed images."""
         # Request multiple times
         viewed_images = []
         for _ in range(5):
-            response = client.get('/carousel/next?mode=slideshow')
+            response = client.get('/carousel/next')
             data = json.loads(response.data)
             viewed_images.append(data['image_name'])
 
@@ -243,7 +234,7 @@ class TestWebRoutes:
         for img in temp_gallery.glob("*.jpg"):
             img.unlink()
 
-        response = client.get('/carousel/next?mode=random')
+        response = client.get('/carousel/next')
         # Should handle gracefully
         assert response.status_code in [200, 404]
 

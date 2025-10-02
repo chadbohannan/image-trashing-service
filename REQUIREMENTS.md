@@ -34,9 +34,7 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 
 ### 3. Carousel (Slideshow)
 - Full-screen slideshow mode
-- Two modes:
-  - **Random**: Select random image from current folder hierarchy
-  - **Slideshow**: Select least-recently-viewed image from current folder hierarchy
+- Select least-recently-viewed image from current folder hierarchy
 - **CRITICAL**: Carousel must respect current gallery folder context
   - Only show images from current folder and its subdirectories
   - Do NOT show all images from entire gallery root
@@ -51,7 +49,7 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 - Trash support: Delete current image from carousel
 
 ### 4. View Tracking
-- Track when images are viewed (for slideshow mode)
+- Track when images are viewed
 - Database schema: `image_metadata` table
   - `image_path` (PRIMARY KEY)
   - `last_viewed_at` (REAL timestamp)
@@ -130,7 +128,7 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 ### Carousel Slideshow
 1. User opens carousel from gallery
 2. Carousel shows images only from current folder context
-3. Slideshow mode shows least-recently-viewed first (oldest files prioritized)
+3. Shows least-recently-viewed first (oldest files prioritized)
 4. User can trash images directly from carousel
 5. Preloaded images don't pollute view tracking
 

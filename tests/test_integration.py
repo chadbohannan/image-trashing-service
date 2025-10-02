@@ -132,7 +132,7 @@ class TestFullIntegration:
         assert b'beach0.jpg' in response.data
 
         # 5. Test carousel
-        response = client.get('/carousel/next?mode=random')
+        response = client.get('/carousel/next')
         assert response.status_code == 200
 
         # 6. Trash an image
@@ -149,7 +149,7 @@ class TestFullIntegration:
         assert b'red.jpg' not in response.data
 
     def test_slideshow_mode_progression(self, test_gallery):
-        """Test that slideshow mode progresses through images."""
+        """Test that carousel progresses through images."""
         app = create_app(
             gallery_root=str(test_gallery['path']),
             db_path=test_gallery['db_path']
@@ -157,11 +157,11 @@ class TestFullIntegration:
         app.config['TESTING'] = True
         client = app.test_client()
 
-        # Request multiple images in slideshow mode
+        # Request multiple images in carousel
         # Gallery has 7 total images: 3 in root, 3 in vacation/, 1 in work/
         viewed_images = set()
         for _ in range(8):
-            response = client.get('/carousel/next?mode=slideshow')
+            response = client.get('/carousel/next')
             assert response.status_code == 200
 
             import json

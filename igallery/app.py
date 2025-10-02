@@ -2,7 +2,6 @@
 
 import io
 import os
-import random
 import threading
 from pathlib import Path
 from flask import Flask, render_template, send_file, request, jsonify, abort
@@ -218,8 +217,7 @@ def create_app(
 
     @app.route('/carousel/next')
     def carousel_next():
-        """Get next image for carousel (random or slideshow mode)."""
-        mode = request.args.get('mode', 'random')
+        """Get next image for carousel (slideshow mode)."""
         relative_path = request.args.get('path', '')
         preload = request.args.get('preload', 'false') == 'true'
 
@@ -231,17 +229,11 @@ def create_app(
         if not images:
             return jsonify({'error': 'No images found'}), 404
 
-        # Sync images on slideshow mode (ensures all images have metadata)
-        if mode == 'slideshow':
-            db.sync_images(images)
+        # Sync images (ensures all images have metadata)
+        db.sync_images(images)
 
-        # Select image based on mode
-        if mode == 'random':
-            selected_image = random.choice(images)
-        elif mode == 'slideshow':
-            selected_image = db.get_least_recently_viewed(images)
-        else:
-            selected_image = images[0]
+        # Select least recently viewed image
+        selected_image = db.get_least_recently_viewed(images)
 
         # Only record view if not preloading
         if not preload:

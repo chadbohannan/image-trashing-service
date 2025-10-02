@@ -355,7 +355,7 @@ function nextImage() {
     loading.classList.remove('hidden');
     image.classList.add('hidden');
 
-    fetch(`/carousel/next?mode=slideshow&path=${currentPath}`)
+    fetch(`/carousel/next?path=${currentPath}`)
         .then(response => {
             if (!response.ok) {
                 return response.text().then(text => {
@@ -452,7 +452,7 @@ function preloadNextImage() {
     }
 
     // Fetch metadata for next image (with preload flag to avoid recording view)
-    fetch(`/carousel/next?mode=slideshow&path=${currentPath}&preload=true`)
+    fetch(`/carousel/next?path=${currentPath}&preload=true`)
         .then(response => response.json())
         .then(data => {
             if (data.error) {
@@ -564,7 +564,7 @@ function trashCurrentImage() {
                 loading.classList.remove('hidden');
                 image.classList.add('hidden');
 
-                fetch(`/carousel/next?mode=slideshow&path=${currentPath}`)
+                fetch(`/carousel/next?path=${currentPath}`)
                     .then(response => response.json())
                     .then(data => {
                         if (data.error) {
