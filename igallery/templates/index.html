@@ -488,8 +488,8 @@ function recordImageView(imageName) {
     });
 }
 
-function trashImage(imageName, event) {
-    event.stopPropagation();
+function trashImage(imageName, event, fromLightbox = false) {
+    if (event) event.stopPropagation();
 
     const currentPath = "{{ current_path }}";
 
@@ -509,14 +509,29 @@ function trashImage(imageName, event) {
                 item.remove();
             }
 
-            // Rebuild galleryImages array
+            // Rebuild galleryImages array and handle lightbox
             const index = galleryImages.findIndex(img => img.name === imageName);
             if (index !== -1) {
                 galleryImages.splice(index, 1);
             }
 
-            // Show toast notification
-            showToast(`Moved "${imageName}" to trash`);
+            // Re-initialize lightbox click handlers with updated indices
+            initLightboxThumbnails();
+
+            // Handle lightbox behavior when deleting from lightbox
+            if (fromLightbox) {
+                if (galleryImages.length === 0) {
+                    // No more images, close lightbox
+                    closeLightbox();
+                } else {
+                    // Stay at same index (shows next image), or go back one if we deleted the last image
+                    if (currentImageIndex >= galleryImages.length) {
+                        currentImageIndex = galleryImages.length - 1;
+                    }
+                    updateLightboxImage();
+                    recordImageView(galleryImages[currentImageIndex].name);
+                }
+            }
 
             // Check if page is now empty
             const remainingItems = document.querySelectorAll('.thumbnail-item');
@@ -571,6 +586,14 @@ document.addEventListener('keydown', function(e) {
         case ' ':
             e.preventDefault(); // Prevent space from scrolling
             nextImage();
+            break;
+        case 'Backspace':
+        case 'Delete':
+            e.preventDefault(); // Prevent browser back navigation
+            if (galleryImages.length > 0) {
+                const currentImage = galleryImages[currentImageIndex];
+                trashImage(currentImage.name, null, true);
+            }
             break;
     }
 });

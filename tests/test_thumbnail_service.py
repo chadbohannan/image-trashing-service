@@ -30,7 +30,8 @@ def test_image(temp_dir):
 def thumbnail_service(temp_dir):
     """Create a thumbnail service instance."""
     db_path = str(Path(temp_dir) / "test.db")
-    return ThumbnailService(db_path=db_path)
+    db = Database(db_path)
+    return ThumbnailService(db)
 
 
 class TestThumbnailService:
@@ -117,7 +118,8 @@ class TestThumbnailService:
         db_path = str(Path(temp_dir) / "test.db")
 
         # Create service
-        service = ThumbnailService(db_path=db_path)
+        db = Database(db_path)
+        service = ThumbnailService(db)
 
         # Generate thumbnail
         thumbnail_data = service.get_or_create_thumbnail(test_image)

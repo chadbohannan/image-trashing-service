@@ -58,7 +58,7 @@ class TestFullIntegration:
 
         # 1. Initialize services
         db = Database(test_gallery['db_path'])
-        thumbnail_service = ThumbnailService(test_gallery['db_path'])
+        thumbnail_service = ThumbnailService(db)
         file_ops = FileOperations(str(gallery_path), gallery_root=str(gallery_path))
 
         # 2. List images
@@ -174,7 +174,8 @@ class TestFullIntegration:
     def test_thumbnail_cache_persistence(self, test_gallery):
         """Test that thumbnail cache persists across service restarts."""
         # First service instance
-        service1 = ThumbnailService(test_gallery['db_path'])
+        db1 = Database(test_gallery['db_path'])
+        service1 = ThumbnailService(db1)
 
         gallery_path = test_gallery['path']
         image_path = str(gallery_path / "red.jpg")
@@ -184,7 +185,8 @@ class TestFullIntegration:
         assert isinstance(thumb1, bytes)
 
         # Second service instance (simulating restart)
-        service2 = ThumbnailService(test_gallery['db_path'])
+        db2 = Database(test_gallery['db_path'])
+        service2 = ThumbnailService(db2)
 
         # Should return cached thumbnail
         thumb2 = service2.get_or_create_thumbnail(image_path)

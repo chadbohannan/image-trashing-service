@@ -3,6 +3,7 @@
 import io
 import os
 import random
+import threading
 from pathlib import Path
 from flask import Flask, render_template, send_file, request, jsonify, abort
 
@@ -11,36 +12,29 @@ from igallery.thumbnail_service import ThumbnailService
 from igallery.file_operations import FileOperations
 
 
-def _collect_all_image_paths(gallery_root: str) -> tuple[set[str], set[str]]:
-    """Recursively collect all image paths in gallery and trash.
+def _collect_all_image_paths_in_dir(directory: Path, exclude_dirs: set[str] = None) -> set[str]:
+    """Recursively collect all image paths in a directory.
+
+    Args:
+        directory: Directory to scan
+        exclude_dirs: Set of directory names to exclude
 
     Returns:
-        Tuple of (gallery_images, trash_images)
+        Set of absolute image paths
     """
-    gallery_images = set()
-    trash_images = set()
-    gallery_path = Path(gallery_root).resolve()
-    trash_path = gallery_path / "trash"
+    exclude_dirs = exclude_dirs or set()
+    images = set()
 
-    # Collect gallery images (excluding trash)
-    for root, dirs, files in os.walk(gallery_path):
-        # Skip trash directory
-        dirs[:] = [d for d in dirs if d != 'trash']
+    for root, dirs, files in os.walk(directory):
+        # Filter out excluded directories
+        dirs[:] = [d for d in dirs if d not in exclude_dirs]
 
         for file in files:
             file_path = Path(root) / file
             if ThumbnailService.is_image_file(str(file_path)):
-                gallery_images.add(str(file_path.resolve()))
+                images.add(str(file_path.resolve()))
 
-    # Collect trash images
-    if trash_path.exists():
-        for root, dirs, files in os.walk(trash_path):
-            for file in files:
-                file_path = Path(root) / file
-                if ThumbnailService.is_image_file(str(file_path)):
-                    trash_images.add(str(file_path.resolve()))
-
-    return gallery_images, trash_images
+    return images
 
 
 def create_app(
@@ -62,30 +56,78 @@ def create_app(
 
     # Initialize services
     db = Database(db_path)
-    thumbnail_service = ThumbnailService(db_path)
+    thumbnail_service = ThumbnailService(db)
 
-    # Cleanup orphaned records on startup
-    print("Cleaning up orphaned database records...")
-    valid_gallery, valid_trash = _collect_all_image_paths(gallery_root)
-    orphaned_thumbs, orphaned_meta, orphaned_trash = db.cleanup_orphaned_records(valid_gallery, valid_trash)
-    if orphaned_thumbs or orphaned_meta or orphaned_trash:
-        print(f"Removed {orphaned_thumbs} orphaned thumbnails, {orphaned_meta} orphaned metadata, and {orphaned_trash} orphaned trash records")
+    # Track cleanup status
+    cleanup_status = {'in_progress': False, 'last_run': None}
+
+    def cleanup_orphaned_records_async():
+        """Background task to cleanup orphaned database records."""
+        if cleanup_status['in_progress']:
+            return  # Already running
+
+        cleanup_status['in_progress'] = True
+        try:
+            gallery_path = Path(gallery_root).resolve()
+            trash_path = gallery_path / "trash"
+
+            # Collect valid paths
+            valid_gallery = _collect_all_image_paths_in_dir(gallery_path, exclude_dirs={'trash'})
+            valid_trash = _collect_all_image_paths_in_dir(trash_path) if trash_path.exists() else set()
+
+            # Cleanup
+            orphaned_thumbs, orphaned_meta, orphaned_trash = db.cleanup_orphaned_records(
+                valid_gallery, valid_trash
+            )
+
+            import time
+            cleanup_status['last_run'] = time.time()
+
+            if orphaned_thumbs or orphaned_meta or orphaned_trash:
+                print(f"Cleanup: Removed {orphaned_thumbs} thumbnails, {orphaned_meta} metadata, {orphaned_trash} trash records")
+        except Exception as e:
+            # Silently handle errors in background thread
+            print(f"Background cleanup error: {e}")
+        finally:
+            cleanup_status['in_progress'] = False
+
+    # Start background cleanup on first request (skip in testing mode)
+    @app.before_request
+    def lazy_cleanup():
+        """Trigger cleanup on first request only."""
+        if app.config.get('TESTING'):
+            return
+        if cleanup_status['last_run'] is None and not cleanup_status['in_progress']:
+            threading.Thread(target=cleanup_orphaned_records_async, daemon=True).start()
+
+    def validate_gallery_path(relative_path: str = '') -> Path:
+        """Validate and resolve a gallery path.
+
+        Args:
+            relative_path: Relative path within gallery
+
+        Returns:
+            Resolved Path object
+
+        Raises:
+            403: Path traversal attempt
+            400: Invalid path
+        """
+        try:
+            current_dir = (Path(gallery_root) / relative_path).resolve()
+            gallery_root_resolved = Path(gallery_root).resolve()
+            if not str(current_dir).startswith(str(gallery_root_resolved)):
+                abort(403)
+            return current_dir
+        except Exception:
+            abort(400)
 
     @app.route('/')
     def index():
         """Gallery index page with thumbnail grid."""
         # Get path parameter for subdirectory navigation
         relative_path = request.args.get('path', '')
-        current_dir = Path(gallery_root) / relative_path
-
-        # Security check
-        try:
-            current_dir = current_dir.resolve()
-            gallery_root_resolved = Path(gallery_root).resolve()
-            if not str(current_dir).startswith(str(gallery_root_resolved)):
-                abort(403)
-        except Exception:
-            abort(400)
+        current_dir = validate_gallery_path(relative_path)
 
         file_ops = FileOperations(str(current_dir), gallery_root=gallery_root)
 
@@ -128,16 +170,7 @@ def create_app(
     def thumbnail(image_name):
         """Serve thumbnail for an image."""
         relative_path = request.args.get('path', '')
-        current_dir = Path(gallery_root) / relative_path
-
-        # Security check
-        try:
-            current_dir = current_dir.resolve()
-            gallery_root_resolved = Path(gallery_root).resolve()
-            if not str(current_dir).startswith(str(gallery_root_resolved)):
-                abort(403)
-        except Exception:
-            abort(400)
+        current_dir = validate_gallery_path(relative_path)
 
         image_path = current_dir / image_name
 
@@ -160,16 +193,7 @@ def create_app(
     def image(image_name):
         """Serve full-size image."""
         relative_path = request.args.get('path', '')
-        current_dir = Path(gallery_root) / relative_path
-
-        # Security check
-        try:
-            current_dir = current_dir.resolve()
-            gallery_root_resolved = Path(gallery_root).resolve()
-            if not str(current_dir).startswith(str(gallery_root_resolved)):
-                abort(403)
-        except Exception:
-            abort(400)
+        current_dir = validate_gallery_path(relative_path)
 
         image_path = current_dir / image_name
 
@@ -197,7 +221,8 @@ def create_app(
         mode = request.args.get('mode', 'random')
 
         # Get ALL images from entire gallery (not just current directory)
-        gallery_images, _ = _collect_all_image_paths(gallery_root)
+        gallery_path = Path(gallery_root).resolve()
+        gallery_images = _collect_all_image_paths_in_dir(gallery_path, exclude_dirs={'trash'})
         images = sorted(list(gallery_images))
 
         if not images:
@@ -242,16 +267,7 @@ def create_app(
         if not image_name:
             return jsonify({'error': 'No image specified'}), 400
 
-        current_dir = Path(gallery_root) / relative_path
-
-        # Security check
-        try:
-            current_dir = current_dir.resolve()
-            gallery_root_resolved = Path(gallery_root).resolve()
-            if not str(current_dir).startswith(str(gallery_root_resolved)):
-                abort(403)
-        except Exception:
-            abort(400)
+        current_dir = validate_gallery_path(relative_path)
 
         file_ops = FileOperations(str(current_dir), gallery_root=gallery_root)
         image_path = current_dir / image_name

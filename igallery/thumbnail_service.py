@@ -15,13 +15,13 @@ class ThumbnailService:
 
     SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
 
-    def __init__(self, db_path: str = ".igallery.db"):
+    def __init__(self, db: Database):
         """Initialize thumbnail service.
 
         Args:
-            db_path: Path to SQLite database
+            db: Database instance to use for caching
         """
-        self.db = Database(db_path)
+        self.db = db
 
     def get_or_create_thumbnail(
         self,
