@@ -191,6 +191,26 @@
         color: #4a9eff;
     }
 
+    /* Trash button */
+    .carousel-trash {
+        position: fixed;
+        top: 20px;
+        left: 30px;
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        z-index: 300;
+        background-color: transparent;
+        padding: 8px 16px;
+        border-radius: 8px;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+
+    .carousel-trash:hover {
+        opacity: 1;
+    }
+
     .toast {
         position: fixed;
         bottom: 30px;
@@ -219,7 +239,7 @@
     /* Keyboard shortcuts help */
     .shortcuts-hint {
         position: fixed;
-        bottom: 20px;
+        top: 5px;
         left: 50%;
         transform: translateX(-50%);
         background-color: rgba(42, 42, 42, 0.95);
@@ -243,6 +263,7 @@
 <div class="carousel-container">
     <!-- Close button -->
     <span class="carousel-close" onclick="closeCarousel()" title="Close (Esc)">×</span>
+    <span class="carousel-trash" onclick="trashCurrentImage()" title="Move to trash (Backspace)">🗑️</span>
 
     <!-- Main image area -->
     <div class="carousel-image-wrapper">
@@ -269,11 +290,6 @@
                 </label>
                 <span style="font-size: 12px; color: #888;">sec</span>
             </div>
-
-            <button class="control-btn trash" onclick="trashCurrentImage()" title="Move to trash (Backspace)">
-                <span>🗑️</span>
-                <span>Trash</span>
-            </button>
         </div>
     </div>
 
@@ -293,6 +309,7 @@ let isPlaying = false;
 let imageHistory = [];  // Track viewed images for back navigation
 let historyIndex = -1;  // Current position in history
 const currentPath = "{{ current_path }}";
+let preloadedImage = null;  // Preloaded next image
 
 function nextImage() {
     // If we're navigating back in history, just move forward
@@ -302,6 +319,36 @@ function nextImage() {
         return;
     }
 
+    // Check if we have a preloaded image ready
+    if (preloadedImage) {
+        const loading = document.getElementById('loading');
+        const image = document.getElementById('carousel-image');
+
+        loading.classList.remove('hidden');
+        image.classList.add('hidden');
+
+        currentImageName = preloadedImage.name;
+        currentImagePath = preloadedImage.path;
+
+        // Add to history
+        const imageData = {
+            name: preloadedImage.name,
+            path: preloadedImage.path,
+            url: preloadedImage.url
+        };
+
+        imageHistory.push(imageData);
+        historyIndex = imageHistory.length - 1;
+
+        displayImage(preloadedImage.url, preloadedImage.name);
+
+        // Clear the preloaded image
+        preloadedImage = null;
+
+        return;
+    }
+
+    // No preloaded image, fetch normally
     const loading = document.getElementById('loading');
     const image = document.getElementById('carousel-image');
 
@@ -392,7 +439,38 @@ function displayImage(url, name) {
     image.onload = function() {
         loading.classList.add('hidden');
         image.classList.remove('hidden');
+
+        // Preload the next image after current one is displayed
+        preloadNextImage();
     };
+}
+
+function preloadNextImage() {
+    // Only preload if we're at the end of history (forward navigation)
+    if (historyIndex !== imageHistory.length - 1) {
+        return; // Already have next image in history
+    }
+
+    // Fetch metadata for next image
+    fetch(`/carousel/next?mode=slideshow&path=${currentPath}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                return; // Silently fail preload
+            }
+
+            // Create and preload the image
+            preloadedImage = {
+                name: data.image_name,
+                path: data.image_path,
+                url: data.image_url,
+                img: new Image()
+            };
+            preloadedImage.img.src = data.image_url;
+        })
+        .catch(() => {
+            // Silently fail preload
+        });
 }
 
 function toggleAutoplay() {
@@ -464,22 +542,22 @@ function trashCurrentImage() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
+            // Check if we're at the end of history (forward navigation position)
+            const wasAtEnd = historyIndex === imageHistory.length - 1;
+
             // Remove current image from history
             if (historyIndex >= 0 && historyIndex < imageHistory.length) {
                 imageHistory.splice(historyIndex, 1);
             }
 
             // After splice, check what's at the current position
-            if (historyIndex < imageHistory.length) {
+            if (historyIndex < imageHistory.length && !wasAtEnd) {
                 // There's already an image at this position (what was i+1 is now i)
-                // Just display it
-                loadImageFromHistory(imageHistory[historyIndex]);
-            } else if (imageHistory.length > 0) {
-                // We deleted the last image, show the previous one
-                historyIndex = imageHistory.length - 1;
+                // This happens when navigating backward
                 loadImageFromHistory(imageHistory[historyIndex]);
             } else {
-                // No more images in history, fetch a new one
+                // We deleted while at the end (forward navigation) or history is empty
+                // Fetch a new image to continue forward
                 const loading = document.getElementById('loading');
                 const image = document.getElementById('carousel-image');
 
@@ -505,7 +583,7 @@ function trashCurrentImage() {
                         };
 
                         imageHistory.push(imageData);
-                        historyIndex = 0;
+                        historyIndex = imageHistory.length - 1;
 
                         displayImage(data.image_url, data.image_name);
                     })

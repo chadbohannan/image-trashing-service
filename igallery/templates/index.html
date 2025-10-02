@@ -157,6 +157,24 @@
         color: #4a9eff;
     }
 
+    .lightbox-trash {
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        z-index: 1001;
+        background-color: transparent;
+        padding: 8px 16px;
+        border-radius: 8px;
+        transition: opacity 0.2s;
+    }
+
+    .lightbox-trash:hover {
+        opacity: 0.7;
+    }
+
     .lightbox-nav {
         position: absolute;
         top: 50%;
@@ -316,6 +334,7 @@
 
 <div id="lightbox" class="lightbox">
     <span class="lightbox-close" onclick="closeLightbox()">×</span>
+    <span class="lightbox-trash" onclick="trashCurrentLightboxImage(event)" title="Move to trash">🗑️</span>
     <span class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="prevImage(event)">‹</span>
     <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
     <span class="lightbox-nav lightbox-next" id="lightbox-next" onclick="nextImage(event)">›</span>
@@ -324,14 +343,16 @@
 
 {% block extra_js %}
 <script>
-// Calculate optimal per_page based on viewport and thumbnail size
+// Calculate optimal per_page based on content width and thumbnail size
 function calculatePerPage() {
     const thumbnailMinSize = 125; // minmax(125px, 1fr) from CSS
     const gap = 20; // gap from CSS
-    const viewportWidth = window.innerWidth;
+
+    // Get the actual width of the content container
+    const contentWidth = document.querySelector('.container')?.offsetWidth || window.innerWidth;
 
     // Calculate how many thumbnails fit per row
-    const thumbnailsPerRow = Math.floor((viewportWidth + gap) / (thumbnailMinSize + gap));
+    const thumbnailsPerRow = Math.floor((contentWidth + gap) / (thumbnailMinSize + gap));
 
     // Calculate for 4 rows minimum
     const calculatedPerPage = thumbnailsPerRow * 4;
@@ -340,16 +361,18 @@ function calculatePerPage() {
     return Math.max(calculatedPerPage, 20);
 }
 
-// Check if we need to reload with calculated per_page
-const urlParams = new URLSearchParams(window.location.search);
-const currentPerPage = parseInt(urlParams.get('per_page')) || 20;
-const optimalPerPage = calculatePerPage();
+// Check if we need to reload with calculated per_page (after DOM is ready)
+window.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentPerPage = parseInt(urlParams.get('per_page')) || 20;
+    const optimalPerPage = calculatePerPage();
 
-if (currentPerPage !== optimalPerPage && !urlParams.has('per_page')) {
-    // Reload with optimal per_page if not explicitly set
-    urlParams.set('per_page', optimalPerPage);
-    window.location.search = urlParams.toString();
-}
+    if (currentPerPage !== optimalPerPage && !urlParams.has('per_page')) {
+        // Reload with optimal per_page if not explicitly set
+        urlParams.set('per_page', optimalPerPage);
+        window.location.search = urlParams.toString();
+    }
+});
 
 // Initialize variables for gallery and lightbox
 let currentPage = {{ page }};
@@ -515,6 +538,14 @@ function recordImageView(imageName) {
     }).catch(() => {
         // Ignore errors in view tracking
     });
+}
+
+function trashCurrentLightboxImage(event) {
+    if (event) event.stopPropagation();
+    if (galleryImages.length > 0) {
+        const currentImage = galleryImages[currentImageIndex];
+        trashImage(currentImage.name, null, true);
+    }
 }
 
 function trashImage(imageName, event, fromLightbox = false) {
