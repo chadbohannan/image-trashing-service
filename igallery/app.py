@@ -220,10 +220,11 @@ def create_app(
     def carousel_next():
         """Get next image for carousel (random or slideshow mode)."""
         mode = request.args.get('mode', 'random')
+        relative_path = request.args.get('path', '')
 
-        # Get ALL images from entire gallery (not just current directory)
-        gallery_path = Path(gallery_root).resolve()
-        gallery_images = _collect_all_image_paths_in_dir(gallery_path, exclude_dirs={'trash'})
+        # Get images from current gallery directory (respects folder hierarchy)
+        current_dir = validate_gallery_path(relative_path)
+        gallery_images = _collect_all_image_paths_in_dir(current_dir, exclude_dirs={'trash'})
         images = sorted(list(gallery_images))
 
         if not images:
