@@ -5,119 +5,190 @@
 {% block extra_css %}
 <style>
     .carousel-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #1a1a1a;
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        min-height: 70vh;
-    }
-
-    .carousel-controls {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 30px;
-        flex-wrap: wrap;
         justify-content: center;
-    }
-
-    .mode-selector {
-        display: flex;
-        gap: 10px;
-        padding: 5px;
-        background-color: #2a2a2a;
-        border-radius: 8px;
-    }
-
-    .mode-btn {
-        padding: 10px 20px;
-        background-color: transparent;
-        color: #e0e0e0;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-
-    .mode-btn:hover {
-        background-color: #3a3a3a;
-    }
-
-    .mode-btn.active {
-        background-color: #4a9eff;
-        color: white;
+        align-items: center;
+        z-index: 100;
     }
 
     .carousel-image-wrapper {
         position: relative;
-        max-width: 90%;
-        max-height: 70vh;
-        margin-bottom: 20px;
-        background-color: #2a2a2a;
-        border-radius: 8px;
-        overflow: hidden;
+        width: 100%;
+        height: 100%;
         display: flex;
         justify-content: center;
         align-items: center;
     }
 
     .carousel-image {
-        max-width: 100%;
-        max-height: 70vh;
+        max-width: 90%;
+        max-height: 90%;
         object-fit: contain;
     }
 
     .loading {
         color: #888;
-        font-size: 1.2rem;
-        padding: 60px;
+        font-size: 1.5rem;
     }
 
-    .image-info {
-        margin-top: 15px;
-        text-align: center;
+    .hidden {
+        display: none;
     }
 
-    .image-name {
-        font-size: 1.1rem;
-        color: #e0e0e0;
-        margin-bottom: 15px;
-    }
 
-    .image-actions {
+    /* Bottom controls */
+    .carousel-controls {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        padding: 30px;
         display: flex;
-        gap: 10px;
-        justify-content: center;
+        flex-direction: column;
+        gap: 15px;
+        align-items: center;
+        z-index: 200;
+        opacity: 0;
+        transition: opacity 0.3s;
     }
+
+    .carousel-controls.controls-visible {
+        opacity: 1;
+    }
+
+    .control-row {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: center;
+    }
+
 
     .autoplay-controls {
         display: flex;
         align-items: center;
         gap: 10px;
         padding: 10px 15px;
-        background-color: #2a2a2a;
+        background-color: rgba(42, 42, 42, 0.95);
         border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     .autoplay-controls label {
-        font-size: 0.95rem;
+        font-size: 14px;
+        color: #e0e0e0;
+        white-space: nowrap;
     }
 
     .autoplay-controls input[type="number"] {
-        width: 60px;
-        padding: 5px;
-        background-color: #1a1a1a;
-        border: 1px solid #444;
+        width: 50px;
+        padding: 5px 8px;
+        background-color: rgba(26, 26, 26, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 4px;
         color: #e0e0e0;
         text-align: center;
+        font-size: 14px;
     }
 
-    .play-pause-btn {
-        padding: 10px 24px;
-        font-size: 1.1rem;
+    .control-btn {
+        padding: 10px 20px;
+        background-color: rgba(42, 42, 42, 0.95);
+        color: #e0e0e0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
 
-    .hidden {
-        display: none;
+    .control-btn:hover {
+        background-color: rgba(74, 158, 255, 0.9);
+        transform: translateY(-2px);
+    }
+
+    .control-btn.play {
+        background-color: rgba(74, 158, 255, 0.95);
+    }
+
+    .control-btn.play.playing {
+        background-color: rgba(40, 167, 69, 0.95);
+    }
+
+    .control-btn.trash {
+        background-color: rgba(220, 53, 69, 0.95);
+    }
+
+    .control-btn.trash:hover {
+        background-color: rgba(200, 35, 51, 0.95);
+    }
+
+    /* Navigation arrows */
+    .carousel-nav {
+        position: fixed;
+        top: 50%;
+        transform: translateY(-50%);
+        color: white;
+        font-size: 48px;
+        cursor: pointer;
+        padding: 20px;
+        user-select: none;
+        z-index: 200;
+        opacity: 0;
+        transition: opacity 0.3s, color 0.2s;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 50%;
+        width: 70px;
+        height: 70px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .carousel-nav.controls-visible {
+        opacity: 0.7;
+    }
+
+    .carousel-nav:hover {
+        opacity: 1 !important;
+        color: #4a9eff;
+    }
+
+    .carousel-nav-prev {
+        left: 30px;
+    }
+
+    .carousel-nav-next {
+        right: 30px;
+    }
+
+    /* Close button */
+    .carousel-close {
+        position: fixed;
+        top: 20px;
+        right: 30px;
+        color: white;
+        font-size: 40px;
+        cursor: pointer;
+        z-index: 300;
+        opacity: 0.7;
+        transition: opacity 0.2s, color 0.2s;
+    }
+
+    .carousel-close:hover {
+        opacity: 1;
+        color: #4a9eff;
     }
 
     .toast {
@@ -144,86 +215,107 @@
     .toast-error {
         background-color: #dc3545;
     }
+
+    /* Keyboard shortcuts help */
+    .shortcuts-hint {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: rgba(42, 42, 42, 0.95);
+        color: #888;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 12px;
+        z-index: 150;
+        opacity: 0;
+        transition: opacity 0.3s;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .shortcuts-hint.controls-visible {
+        opacity: 1;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="carousel-container">
-    <div class="carousel-controls">
-        <div class="mode-selector">
-            <button class="mode-btn active" data-mode="random" onclick="setMode('random')">
-                🎲 Random
-            </button>
-            <button class="mode-btn" data-mode="slideshow" onclick="setMode('slideshow')">
-                🎬 Slideshow
-            </button>
-        </div>
+    <!-- Close button -->
+    <span class="carousel-close" onclick="closeCarousel()" title="Close (Esc)">×</span>
 
-        <div class="autoplay-controls">
-            <button class="btn play-pause-btn" onclick="toggleAutoplay()">
-                <span id="play-icon">▶️</span>
-            </button>
-            <label>
-                Interval (seconds):
-                <input type="number" id="interval-input" value="3" min="1" max="60">
-            </label>
-        </div>
-
-        <button class="btn" onclick="nextImage()">Next Image →</button>
-    </div>
-
-    <div class="carousel-image-wrapper" id="image-wrapper">
-        <div class="loading" id="loading">Click "Next Image" or enable autoplay to start</div>
+    <!-- Main image area -->
+    <div class="carousel-image-wrapper">
+        <div class="loading" id="loading">Press Space or → to start</div>
         <img class="carousel-image hidden" id="carousel-image" src="" alt="">
     </div>
 
-    <div class="image-info" id="image-info" style="display: none;">
-        <div class="image-name" id="image-name"></div>
-        <div class="image-actions">
-            <button class="btn btn-danger" onclick="trashCurrentImage()">🗑️ Move to Trash</button>
+    <!-- Navigation arrows -->
+    <span class="carousel-nav carousel-nav-prev" id="nav-prev" onclick="prevImage()" title="Previous (←)">‹</span>
+    <span class="carousel-nav carousel-nav-next" id="nav-next" onclick="nextImage()" title="Next (→ or Space)">›</span>
+
+    <!-- Bottom controls -->
+    <div class="carousel-controls" id="controls">
+        <div class="control-row">
+            <button class="control-btn play" id="play-btn" onclick="toggleAutoplay()" title="Play/Pause (P)">
+                <span id="play-icon">▶</span>
+                <span id="play-text">Play</span>
+            </button>
+
+            <div class="autoplay-controls">
+                <label>
+                    Interval:
+                    <input type="number" id="interval-input" value="3" min="1" max="60" title="Autoplay interval in seconds">
+                </label>
+                <span style="font-size: 12px; color: #888;">sec</span>
+            </div>
+
+            <button class="control-btn trash" onclick="trashCurrentImage()" title="Move to trash (Backspace)">
+                <span>🗑️</span>
+                <span>Trash</span>
+            </button>
         </div>
+    </div>
+
+    <!-- Keyboard shortcuts hint -->
+    <div class="shortcuts-hint" id="shortcuts-hint">
+        Space/→: Next • ←: Prev • P: Play/Pause • Backspace: Trash • Esc: Close
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-let currentMode = 'random';
 let currentImageName = null;
-let currentImagePath = null;  // Track the relative directory path for the current image
+let currentImagePath = null;
 let autoplayInterval = null;
 let isPlaying = false;
+let imageHistory = [];  // Track viewed images for back navigation
+let historyIndex = -1;  // Current position in history
 const currentPath = "{{ current_path }}";
 
-function setMode(mode) {
-    currentMode = mode;
-
-    // Update button states
-    document.querySelectorAll('.mode-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
-}
-
 function nextImage() {
+    // If we're navigating back in history, just move forward
+    if (historyIndex < imageHistory.length - 1) {
+        historyIndex++;
+        loadImageFromHistory(imageHistory[historyIndex]);
+        return;
+    }
+
     const loading = document.getElementById('loading');
     const image = document.getElementById('carousel-image');
-    const info = document.getElementById('image-info');
 
     loading.classList.remove('hidden');
     image.classList.add('hidden');
-    info.style.display = 'none';
 
-    fetch(`/carousel/next?mode=${currentMode}&path=${currentPath}`)
+    fetch(`/carousel/next?mode=slideshow&path=${currentPath}`)
         .then(response => {
             if (!response.ok) {
-                // Try to parse error JSON
                 return response.text().then(text => {
                     try {
                         const data = JSON.parse(text);
                         throw new Error(data.error || `Server error (${response.status})`);
                     } catch (parseError) {
-                        // If JSON parsing fails, show the raw response
                         if (text) {
                             throw new Error(`Server error (${response.status}): ${text.substring(0, 100)}`);
                         } else {
@@ -245,25 +337,62 @@ function nextImage() {
         })
         .then(data => {
             if (data.error) {
-                alert(data.error);
+                showToast(data.error, 'error');
                 loading.classList.add('hidden');
                 return;
             }
 
             currentImageName = data.image_name;
-            currentImagePath = data.image_path;  // Store the directory path
-            image.src = data.image_url;
-            image.onload = function() {
-                loading.classList.add('hidden');
-                image.classList.remove('hidden');
-                document.getElementById('image-name').textContent = currentImageName;
-                info.style.display = 'block';
+            currentImagePath = data.image_path;
+
+            // Add to history
+            const imageData = {
+                name: data.image_name,
+                path: data.image_path,
+                url: data.image_url
             };
+
+            // If we're at the end of history, add new image
+            if (historyIndex === imageHistory.length - 1) {
+                imageHistory.push(imageData);
+                historyIndex = imageHistory.length - 1;
+            } else {
+                // If we're in the middle, truncate and add
+                imageHistory = imageHistory.slice(0, historyIndex + 1);
+                imageHistory.push(imageData);
+                historyIndex = imageHistory.length - 1;
+            }
+
+            displayImage(data.image_url, data.image_name);
         })
         .catch(error => {
-            alert('Error loading image: ' + error.message);
+            showToast('Error loading image: ' + error.message, 'error');
             loading.classList.add('hidden');
         });
+}
+
+function prevImage() {
+    if (historyIndex > 0) {
+        historyIndex--;
+        loadImageFromHistory(imageHistory[historyIndex]);
+    }
+}
+
+function loadImageFromHistory(imageData) {
+    currentImageName = imageData.name;
+    currentImagePath = imageData.path;
+    displayImage(imageData.url, imageData.name);
+}
+
+function displayImage(url, name) {
+    const loading = document.getElementById('loading');
+    const image = document.getElementById('carousel-image');
+
+    image.src = url;
+    image.onload = function() {
+        loading.classList.add('hidden');
+        image.classList.remove('hidden');
+    };
 }
 
 function toggleAutoplay() {
@@ -278,14 +407,22 @@ function startAutoplay() {
     const intervalSeconds = parseInt(document.getElementById('interval-input').value) || 3;
     const intervalMs = intervalSeconds * 1000;
 
-    // Load first image immediately
-    nextImage();
+    // Load first image immediately if none loaded
+    if (imageHistory.length === 0) {
+        nextImage();
+    }
 
     autoplayInterval = setInterval(nextImage, intervalMs);
     isPlaying = true;
 
-    document.getElementById('play-icon').textContent = '⏸️';
-    document.querySelector('.play-pause-btn').style.backgroundColor = '#28a745';
+    // Update UI
+    const playBtn = document.getElementById('play-btn');
+    const playIcon = document.getElementById('play-icon');
+    const playText = document.getElementById('play-text');
+
+    playBtn.classList.add('playing');
+    playIcon.textContent = '⏸';
+    playText.textContent = 'Pause';
 }
 
 function stopAutoplay() {
@@ -295,8 +432,18 @@ function stopAutoplay() {
     }
     isPlaying = false;
 
-    document.getElementById('play-icon').textContent = '▶️';
-    document.querySelector('.play-pause-btn').style.backgroundColor = '#4a9eff';
+    // Update UI
+    const playBtn = document.getElementById('play-btn');
+    const playIcon = document.getElementById('play-icon');
+    const playText = document.getElementById('play-text');
+
+    playBtn.classList.remove('playing');
+    playIcon.textContent = '▶';
+    playText.textContent = 'Play';
+}
+
+function closeCarousel() {
+    window.location.href = `/?path=${currentPath}`;
 }
 
 function trashCurrentImage() {
@@ -317,9 +464,56 @@ function trashCurrentImage() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showToast(`Moved "${imageName}" to trash`);
-            // Load next image
-            nextImage();
+            // Remove current image from history
+            if (historyIndex >= 0 && historyIndex < imageHistory.length) {
+                imageHistory.splice(historyIndex, 1);
+            }
+
+            // After splice, check what's at the current position
+            if (historyIndex < imageHistory.length) {
+                // There's already an image at this position (what was i+1 is now i)
+                // Just display it
+                loadImageFromHistory(imageHistory[historyIndex]);
+            } else if (imageHistory.length > 0) {
+                // We deleted the last image, show the previous one
+                historyIndex = imageHistory.length - 1;
+                loadImageFromHistory(imageHistory[historyIndex]);
+            } else {
+                // No more images in history, fetch a new one
+                const loading = document.getElementById('loading');
+                const image = document.getElementById('carousel-image');
+
+                loading.classList.remove('hidden');
+                image.classList.add('hidden');
+
+                fetch(`/carousel/next?mode=slideshow&path=${currentPath}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            showToast(data.error, 'error');
+                            loading.classList.add('hidden');
+                            return;
+                        }
+
+                        currentImageName = data.image_name;
+                        currentImagePath = data.image_path;
+
+                        const imageData = {
+                            name: data.image_name,
+                            path: data.image_path,
+                            url: data.image_url
+                        };
+
+                        imageHistory.push(imageData);
+                        historyIndex = 0;
+
+                        displayImage(data.image_url, data.image_name);
+                    })
+                    .catch(error => {
+                        showToast('Error loading next image: ' + error.message, 'error');
+                        loading.classList.add('hidden');
+                    });
+            }
         } else {
             showToast('Error moving image to trash: ' + (data.error || 'Unknown error'), 'error');
         }
@@ -355,25 +549,48 @@ function showToast(message, type = 'success') {
 document.addEventListener('keydown', function(e) {
     switch(e.key) {
         case 'ArrowRight':
-        case ' ':
             e.preventDefault();
             nextImage();
+            // Don't show controls when advancing with arrow
+            break;
+        case ' ':
+            e.preventDefault();
+            if (isPlaying) {
+                stopAutoplay();
+                showControls();
+            } else {
+                nextImage();
+                // Don't show controls when advancing with spacebar
+            }
+            break;
+        case 'ArrowLeft':
+            e.preventDefault();
+            prevImage();
+            // Don't show controls when going back with arrow
             break;
         case 'p':
+        case 'P':
             e.preventDefault();
             toggleAutoplay();
+            showControls();
             break;
-        case 'r':
+        case 'Delete':      // Forward delete (fn+delete on Mac)
+        case 'Backspace':   // Backspace/delete on Mac
             e.preventDefault();
-            setMode('random');
-            break;
-        case 's':
-            e.preventDefault();
-            setMode('slideshow');
-            break;
-        case 'Delete':
-            e.preventDefault();
+            if (isPlaying) {
+                stopAutoplay();
+            }
             trashCurrentImage();
+            // Don't show controls when deleting
+            break;
+        case 'Escape':
+            e.preventDefault();
+            if (isPlaying) {
+                stopAutoplay();
+                showControls();
+            } else {
+                closeCarousel();
+            }
             break;
     }
 });
@@ -385,5 +602,45 @@ document.getElementById('interval-input').addEventListener('change', function() 
         startAutoplay();
     }
 });
+
+// Auto-hide controls after inactivity
+let controlsTimeout;
+let lastMouseMove = 0;
+
+function showControls() {
+    const controls = document.getElementById('controls');
+    const navPrev = document.getElementById('nav-prev');
+    const navNext = document.getElementById('nav-next');
+    const shortcuts = document.getElementById('shortcuts-hint');
+
+    controls.classList.add('controls-visible');
+    navPrev.classList.add('controls-visible');
+    navNext.classList.add('controls-visible');
+    shortcuts.classList.add('controls-visible');
+
+    clearTimeout(controlsTimeout);
+    controlsTimeout = setTimeout(() => {
+        controls.classList.remove('controls-visible');
+        navPrev.classList.remove('controls-visible');
+        navNext.classList.remove('controls-visible');
+        shortcuts.classList.remove('controls-visible');
+    }, 2000);
+}
+
+// Show controls on mouse movement
+document.addEventListener('mousemove', function() {
+    const now = Date.now();
+    // Only trigger if enough time has passed since last move (debounce)
+    if (now - lastMouseMove > 100) {
+        showControls();
+        lastMouseMove = now;
+    }
+});
+
+// Note: We don't automatically show controls on ALL keydown events
+// Individual key handlers decide whether to show controls
+
+// Show controls on page load briefly
+setTimeout(showControls, 100);
 </script>
 {% endblock %}

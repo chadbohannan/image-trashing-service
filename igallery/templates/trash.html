@@ -2,20 +2,21 @@
 
 {% block title %}iGallery - Trash{% endblock %}
 
+{% block nav_left %}
+<div class="breadcrumb" style="margin: 0;">
+    <a href="/">Home</a>
+    <span>/</span>
+    <span style="color: #e0e0e0;">Trash</span>
+</div>
+{% endblock %}
+
 {% block extra_css %}
 <style>
     .trash-header {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-end;
         align-items: center;
         margin-bottom: 30px;
-        padding-bottom: 20px;
-        border-bottom: 2px solid #3a3a3a;
-    }
-
-    .trash-info {
-        font-size: 1.1rem;
-        color: #888;
     }
 
     .delete-all-btn {
@@ -155,20 +156,17 @@
 {% endblock %}
 
 {% block content %}
+{% if image_count > 0 %}
 <div class="trash-header">
-    <div>
-        <h2>🗑️ Trash <span class="warning-badge">{{ image_count }} items</span></h2>
-        <p class="trash-info">Images that have been moved to trash</p>
-    </div>
     <button
         id="delete-all-btn"
         class="btn delete-all-btn"
         onclick="deleteAllTrash()"
-        {% if image_count == 0 %}disabled{% endif %}
     >
-        🗑️ Permanently Delete All
+        Delete {{ image_count }} Image{{ 's' if image_count != 1 else '' }}
     </button>
 </div>
+{% endif %}
 
 {% if images %}
 <div class="thumbnail-grid">
@@ -225,9 +223,6 @@ function restoreImage(trashPath, event) {
                 item.remove();
             }
 
-            // Show toast notification
-            showToast(`Restored "${trashPath}" to original location`);
-
             // Update count and check if page is now empty
             const remainingItems = document.querySelectorAll('.thumbnail-item');
             if (remainingItems.length === 0) {
@@ -247,7 +242,8 @@ function restoreImage(trashPath, event) {
 }
 
 function deleteAllTrash() {
-    if (!confirm('⚠️ Permanently delete ALL {{ image_count }} images from trash?\n\nThis action cannot be undone!')) {
+    const imageCount = {{ image_count }};
+    if (!confirm(`⚠️ Permanently delete ${imageCount} image${imageCount !== 1 ? 's' : ''} from trash?\n\nThis action cannot be undone!`)) {
         return;
     }
 
@@ -269,13 +265,13 @@ function deleteAllTrash() {
         } else {
             showToast('Error deleting trash: ' + (data.error || 'Unknown error'), 'error');
             btn.disabled = false;
-            btn.textContent = '🗑️ Permanently Delete All';
+            btn.textContent = `Delete ${imageCount} image${imageCount !== 1 ? 's' : ''}`;
         }
     })
     .catch(error => {
         showToast('Error: ' + error, 'error');
         btn.disabled = false;
-        btn.textContent = '🗑️ Permanently Delete All';
+        btn.textContent = `Delete ${imageCount} image${imageCount !== 1 ? 's' : ''}`;
     });
 }
 

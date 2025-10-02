@@ -26,19 +26,13 @@
 
         header {
             background-color: #2a2a2a;
-            padding: 20px 0;
+            padding: 15px 0;
             margin-bottom: 30px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
 
-        header h1 {
-            font-size: 2rem;
-            font-weight: 600;
-            color: #4a9eff;
-        }
-
         nav {
-            margin-top: 15px;
+            margin: 0;
         }
 
         nav a {
@@ -140,11 +134,14 @@
 <body>
     <header>
         <div class="container">
-            <h1>iGallery</h1>
-            <nav>
-                <a href="/">Gallery</a>
-                <a href="/carousel?path={{ current_path }}">Carousel</a>
-                <a href="/trash-view">🗑️ Trash</a>
+            <nav style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="nav-left">
+                    {% block nav_left %}{% endblock %}
+                </div>
+                <div class="nav-right" style="display: flex; gap: 10px;">
+                    <a href="/carousel?path={{ current_path }}">Carousel</a>
+                    <a href="/trash-view">🗑️ Trash</a>
+                </div>
             </nav>
         </div>
     </header>

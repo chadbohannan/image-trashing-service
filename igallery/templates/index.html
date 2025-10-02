@@ -249,24 +249,19 @@
 </style>
 {% endblock %}
 
-{% block content %}
-<div class="breadcrumb">
+{% block nav_left %}
+<div class="breadcrumb" style="margin: 0;">
     <a href="/">Home</a>
     {% for crumb in breadcrumbs %}
         <span>/</span>
         <a href="/?path={{ crumb.path }}">{{ crumb.name }}</a>
     {% endfor %}
 </div>
+{% endblock %}
 
-{% if has_parent %}
-<div style="margin-bottom: 20px;">
-    <a href="/?path={{ current_path.rsplit('/', 1)[0] if '/' in current_path else '' }}" class="btn">← Parent Directory</a>
-</div>
-{% endif %}
-
+{% block content %}
 {% if subdirectories %}
 <div class="folders">
-    <h2>Folders</h2>
     <div class="folder-grid">
         {% for subdir in subdirectories %}
         <a href="/?path={{ (current_path + '/' + subdir) if current_path else subdir }}" class="folder-item">
@@ -280,7 +275,6 @@
 
 {% if images %}
 <div class="images">
-    <h2>Images (Page {{ page }} of {{ total_pages }})</h2>
     <div class="thumbnail-grid" id="thumbnail-grid">
         {% for image in images %}
         <div class="thumbnail-item" data-image="{{ image }}">
@@ -322,11 +316,9 @@
 
 <div id="lightbox" class="lightbox">
     <span class="lightbox-close" onclick="closeLightbox()">×</span>
-    <span class="lightbox-filename" id="lightbox-filename"></span>
     <span class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="prevImage(event)">‹</span>
     <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
     <span class="lightbox-nav lightbox-next" id="lightbox-next" onclick="nextImage(event)">›</span>
-    <div class="lightbox-counter" id="lightbox-counter"></div>
 </div>
 {% endblock %}
 
@@ -388,15 +380,11 @@ function closeLightbox() {
 
 function updateLightboxImage() {
     const img = document.getElementById('lightbox-img');
-    const filename = document.getElementById('lightbox-filename');
-    const counter = document.getElementById('lightbox-counter');
     const prevBtn = document.getElementById('lightbox-prev');
     const nextBtn = document.getElementById('lightbox-next');
 
     const currentImage = galleryImages[currentImageIndex];
     img.src = currentImage.url;
-    filename.textContent = currentImage.name;
-    counter.textContent = `${currentImageIndex + 1} / ${galleryImages.length}`;
 
     // Update button states
     if (currentImageIndex === 0 && currentPage === 1) {
