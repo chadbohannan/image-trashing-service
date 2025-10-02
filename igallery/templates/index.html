@@ -281,7 +281,7 @@
 {% if images %}
 <div class="images">
     <h2>Images (Page {{ page }} of {{ total_pages }})</h2>
-    <div class="thumbnail-grid">
+    <div class="thumbnail-grid" id="thumbnail-grid">
         {% for image in images %}
         <div class="thumbnail-item" data-image="{{ image }}">
             <div class="thumbnail-wrapper">
@@ -289,7 +289,6 @@
                     src="/thumbnail/{{ image }}?path={{ current_path }}"
                     alt="{{ image }}"
                     class="thumbnail-img"
-                    onclick="openLightbox({{ loop.index0 }})"
                 >
             </div>
             <div class="thumbnail-actions">
@@ -333,19 +332,43 @@
 
 {% block extra_js %}
 <script>
+// Initialize variables for gallery and lightbox
+let currentPage = {{ page }};
+let totalPages = {{ total_pages }};
+const currentPath = "{{ current_path }}";
+
 // Build array of images for lightbox navigation
-const galleryImages = [
+let galleryImages = [];
+
+function updateGalleryImages(images) {
+    galleryImages.length = 0;
+    images.forEach(img => {
+        galleryImages.push({
+            name: img,
+            url: `/image/${img}?path=${currentPath}`
+        });
+    });
+    initLightboxThumbnails();
+}
+
+// Initial population
+updateGalleryImages([
     {% for image in images %}
-    {
-        name: "{{ image }}",
-        url: "/image/{{ image }}?path={{ current_path }}"
-    }{{ "," if not loop.last else "" }}
+        "{{ image }}"{{ "," if not loop.last else "" }}
     {% endfor %}
-];
+]);
 
 let currentImageIndex = 0;
 
-function openLightbox(index) {
+function initLightboxThumbnails() {
+    const thumbnails = document.querySelectorAll('.thumbnail-img');
+    thumbnails.forEach((thumbnail, index) => {
+        thumbnail.onclick = (event) => openLightbox(index, event);
+    });
+}
+
+function openLightbox(index, event) {
+    if (event) event.stopPropagation();
     if (galleryImages.length === 0) return;
 
     currentImageIndex = index;
@@ -376,16 +399,70 @@ function updateLightboxImage() {
     counter.textContent = `${currentImageIndex + 1} / ${galleryImages.length}`;
 
     // Update button states
-    if (currentImageIndex === 0) {
+    if (currentImageIndex === 0 && currentPage === 1) {
         prevBtn.classList.add('disabled');
     } else {
         prevBtn.classList.remove('disabled');
     }
 
-    if (currentImageIndex === galleryImages.length - 1) {
+    if (currentImageIndex === galleryImages.length - 1 && currentPage === totalPages) {
         nextBtn.classList.add('disabled');
     } else {
         nextBtn.classList.remove('disabled');
+    }
+}
+
+async function loadImagesForPage(pageNumber, initialImageIndex) {
+    const response = await fetch(`/?path=${currentPath}&page=${pageNumber}&per_page=20&fetch_images_only=true`);
+    const data = await response.json();
+
+    if (data.success) {
+        // Update the main thumbnail grid in the DOM
+        const thumbnailGrid = document.getElementById('thumbnail-grid');
+        thumbnailGrid.innerHTML = ''; // Clear existing thumbnails
+        data.images.forEach(imgName => {
+            const div = document.createElement('div');
+            div.className = 'thumbnail-item';
+            div.setAttribute('data-image', imgName);
+            div.innerHTML = `
+                <div class="thumbnail-wrapper">
+                    <img
+                        src="/thumbnail/${imgName}?path=${currentPath}"
+                        alt="${imgName}"
+                        class="thumbnail-img"
+                    >
+                </div>
+                <div class="thumbnail-actions">
+                    <span class="thumbnail-name">${imgName}</span>
+                    <button class="trash-btn" onclick="trashImage('${imgName}', event)">🗑️</button>
+                </div>
+            `;
+            thumbnailGrid.appendChild(div);
+        });
+
+        updateGalleryImages(data.images); // Update the galleryImages array and re-init event listeners
+        currentPage = data.page;
+        totalPages = data.total_pages;
+        currentImageIndex = (initialImageIndex === -1) ? galleryImages.length - 1 : initialImageIndex;
+        updateLightboxImage();
+
+        // Update the pagination links at the bottom of the page
+        const paginationDiv = document.querySelector('.pagination');
+        if (paginationDiv) {
+            let newPaginationHtml = '';
+            if (currentPage > 1) {
+                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}">← Previous</a>`;
+            }
+            newPaginationHtml += `<span class="current">${currentPage}</span>`;
+            newPaginationHtml += `<span>of ${totalPages}</span>`;
+            if (currentPage < totalPages) {
+                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}">Next →</a>`;
+            }
+            paginationDiv.innerHTML = newPaginationHtml;
+        }
+
+    } else {
+        showToast(`Error loading images: ${data.error}`, 'error');
     }
 }
 
@@ -395,6 +472,9 @@ function prevImage(event) {
         currentImageIndex--;
         updateLightboxImage();
         recordImageView(galleryImages[currentImageIndex].name);
+    } else if (currentPage > 1) {
+        // Load previous page, and set index to last image of that page
+        loadImagesForPage(currentPage - 1, -1); // -1 will be handled in loadImagesForPage to point to the last image
     }
 }
 
@@ -404,6 +484,9 @@ function nextImage(event) {
         currentImageIndex++;
         updateLightboxImage();
         recordImageView(galleryImages[currentImageIndex].name);
+    } else if (currentPage < totalPages) {
+        // Load next page, and set index to first image of that page
+        loadImagesForPage(currentPage + 1, 0);
     }
 }
 
@@ -482,6 +565,7 @@ function showToast(message, type = 'success') {
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
+
 
 // Keyboard navigation
 document.addEventListener('keydown', function(e) {

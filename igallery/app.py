@@ -96,6 +96,15 @@ def create_app(
         images, total_pages = file_ops.get_page(page, per_page)
         subdirectories = file_ops.list_subdirectories()
 
+        # If this is an AJAX request, return JSON
+        if request.args.get('fetch_images_only') == 'true':
+            return jsonify({
+                'success': True,
+                'images': [Path(img).name for img in images],
+                'page': page,
+                'total_pages': total_pages
+            })
+
         # Build breadcrumbs
         breadcrumbs = []
         if relative_path:
