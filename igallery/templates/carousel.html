@@ -451,8 +451,8 @@ function preloadNextImage() {
         return; // Already have next image in history
     }
 
-    // Fetch metadata for next image
-    fetch(`/carousel/next?mode=slideshow&path=${currentPath}`)
+    // Fetch metadata for next image (with preload flag to avoid recording view)
+    fetch(`/carousel/next?mode=slideshow&path=${currentPath}&preload=true`)
         .then(response => response.json())
         .then(data => {
             if (data.error) {

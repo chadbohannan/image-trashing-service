@@ -39,8 +39,7 @@ class Database:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS image_metadata (
                     image_path TEXT PRIMARY KEY,
-                    last_viewed_at REAL,
-                    view_count INTEGER DEFAULT 0
+                    last_viewed_at REAL
                 )
             """)
 
@@ -64,29 +63,6 @@ class Database:
                 ON trash(trashed_at DESC)
             """)
 
-            conn.commit()
-
-            # Migrate old schema if needed
-            self._migrate_schema(cursor, conn)
-
-    def _migrate_schema(self, cursor, conn):
-        """Migrate old schema to new BLOB-based storage."""
-        # Check if old schema exists (thumbnail_path column)
-        cursor.execute("PRAGMA table_info(thumbnails)")
-        columns = {row[1] for row in cursor.fetchall()}
-
-        if 'thumbnail_path' in columns:
-            # Drop old table and recreate with new schema
-            cursor.execute("DROP TABLE thumbnails")
-            cursor.execute("""
-                CREATE TABLE thumbnails (
-                    image_path TEXT PRIMARY KEY,
-                    thumbnail_data BLOB NOT NULL,
-                    created_at REAL NOT NULL,
-                    image_mtime REAL NOT NULL,
-                    image_size INTEGER NOT NULL
-                )
-            """)
             conn.commit()
 
     @contextmanager
@@ -152,6 +128,8 @@ class Database:
     def sync_images(self, image_paths: list[str]):
         """Sync image metadata for all images, using mtime for new entries.
 
+        This allows prioritizing older files (by mtime) when they haven't been viewed yet.
+
         Args:
             image_paths: List of all image paths to sync
         """
@@ -165,20 +143,21 @@ class Database:
                     (path,)
                 )
                 if not cursor.fetchone():
-                    # New image - insert with mtime as last_viewed_at
+                    # New image - insert with mtime as last_viewed_at to prioritize older files
                     try:
                         from pathlib import Path
                         mtime = Path(path).stat().st_mtime
-                        cursor.execute(
-                            """
-                            INSERT INTO image_metadata (image_path, last_viewed_at, view_count)
-                            VALUES (?, ?, 0)
-                            """,
-                            (path, mtime)
-                        )
                     except (OSError, FileNotFoundError):
-                        # If file doesn't exist, skip it
-                        pass
+                        # If file doesn't exist (e.g., in tests), use epoch time as fallback
+                        mtime = 0.0
+
+                    cursor.execute(
+                        """
+                        INSERT INTO image_metadata (image_path, last_viewed_at)
+                        VALUES (?, ?)
+                        """,
+                        (path, mtime)
+                    )
 
             conn.commit()
 
@@ -192,11 +171,10 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO image_metadata (image_path, last_viewed_at, view_count)
-                VALUES (?, ?, 1)
+                INSERT INTO image_metadata (image_path, last_viewed_at)
+                VALUES (?, ?)
                 ON CONFLICT(image_path) DO UPDATE SET
-                    last_viewed_at = ?,
-                    view_count = view_count + 1
+                    last_viewed_at = ?
                 """,
                 (image_path, time.time(), time.time())
             )
@@ -204,6 +182,10 @@ class Database:
 
     def get_least_recently_viewed(self, image_paths: list[str]) -> Optional[str]:
         """Get the least recently viewed image from a list.
+
+        Returns the image with the oldest last_viewed_at timestamp.
+        For unviewed images, last_viewed_at contains the file mtime,
+        so older files are naturally prioritized.
 
         Assumes all images have been synced to the database first.
 
@@ -222,7 +204,8 @@ class Database:
             # Create placeholders for SQL IN clause
             placeholders = ','.join('?' * len(image_paths))
 
-            # Query for the image with the oldest last_viewed_at among the provided paths
+            # Query for the image with the oldest last_viewed_at
+            # Unviewed images have mtime, viewed images have actual view timestamp
             cursor.execute(
                 f"""
                 SELECT image_path, last_viewed_at

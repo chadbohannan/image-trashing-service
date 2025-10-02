@@ -221,6 +221,7 @@ def create_app(
         """Get next image for carousel (random or slideshow mode)."""
         mode = request.args.get('mode', 'random')
         relative_path = request.args.get('path', '')
+        preload = request.args.get('preload', 'false') == 'true'
 
         # Get images from current gallery directory (respects folder hierarchy)
         current_dir = validate_gallery_path(relative_path)
@@ -242,8 +243,9 @@ def create_app(
         else:
             selected_image = images[0]
 
-        # Record view
-        db.record_view(selected_image)
+        # Only record view if not preloading
+        if not preload:
+            db.record_view(selected_image)
 
         # Construct relative path from gallery root to image
         selected_path = Path(selected_image)

@@ -364,13 +364,23 @@ function calculatePerPage() {
 // Check if we need to reload with calculated per_page (after DOM is ready)
 window.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
-    const currentPerPage = parseInt(urlParams.get('per_page')) || 20;
-    const optimalPerPage = calculatePerPage();
+    const calculatedPerPage = calculatePerPage();
 
-    if (currentPerPage !== optimalPerPage && !urlParams.has('per_page')) {
-        // Reload with optimal per_page if not explicitly set
-        urlParams.set('per_page', optimalPerPage);
-        window.location.search = urlParams.toString();
+    // If per_page is explicitly set in URL, keep that value
+    // Otherwise, use calculated value and potentially reload
+    if (urlParams.has('per_page')) {
+        // User explicitly set per_page, don't change it
+        optimalPerPage = parseInt(urlParams.get('per_page'));
+    } else {
+        // Use calculated value
+        optimalPerPage = calculatedPerPage;
+        const currentPerPage = parseInt(urlParams.get('per_page')) || 20;
+
+        if (currentPerPage !== calculatedPerPage) {
+            // Reload with optimal per_page
+            urlParams.set('per_page', calculatedPerPage);
+            window.location.search = urlParams.toString();
+        }
     }
 });
 
@@ -378,6 +388,7 @@ window.addEventListener('DOMContentLoaded', function() {
 let currentPage = {{ page }};
 let totalPages = {{ total_pages }};
 const currentPath = "{{ current_path }}";
+let optimalPerPage = {{ per_page }}; // Will be updated on DOMContentLoaded if needed
 
 // Build array of images for lightbox navigation
 let galleryImages = [];
@@ -484,6 +495,13 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
         totalPages = data.total_pages;
         currentImageIndex = (initialImageIndex === -1) ? galleryImages.length - 1 : initialImageIndex;
         updateLightboxImage();
+        recordImageView(galleryImages[currentImageIndex].name);
+
+        // Update the URL to reflect the new page
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('page', currentPage);
+        const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+        window.history.pushState({page: currentPage}, '', newUrl);
 
         // Update the pagination links at the bottom of the page
         const paginationDiv = document.querySelector('.pagination');
@@ -506,27 +524,29 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
     }
 }
 
-function prevImage(event) {
+async function prevImage(event) {
     if (event) event.stopPropagation();
+
     if (currentImageIndex > 0) {
         currentImageIndex--;
         updateLightboxImage();
         recordImageView(galleryImages[currentImageIndex].name);
     } else if (currentPage > 1) {
         // Load previous page, and set index to last image of that page
-        loadImagesForPage(currentPage - 1, -1); // -1 will be handled in loadImagesForPage to point to the last image
+        await loadImagesForPage(currentPage - 1, -1); // -1 will be handled in loadImagesForPage to point to the last image
     }
 }
 
-function nextImage(event) {
+async function nextImage(event) {
     if (event) event.stopPropagation();
+
     if (currentImageIndex < galleryImages.length - 1) {
         currentImageIndex++;
         updateLightboxImage();
         recordImageView(galleryImages[currentImageIndex].name);
     } else if (currentPage < totalPages) {
         // Load next page, and set index to first image of that page
-        loadImagesForPage(currentPage + 1, 0);
+        await loadImagesForPage(currentPage + 1, 0);
     }
 }
 

@@ -71,6 +71,9 @@ class TestDatabase:
         """Test that unviewed images are prioritized."""
         images = ["/img1.jpg", "/img2.jpg", "/img3.jpg"]
 
+        # Sync all images first
+        temp_db.sync_images(images)
+
         # View only the first image
         temp_db.record_view(images[0])
 
@@ -122,20 +125,12 @@ class TestDatabase:
 
         # After deletion, should not find the record
 
-    def test_view_count_increments(self, temp_db):
-        """Test that view count increments correctly."""
-        image_path = "/path/to/image.jpg"
-
-        # Record multiple views
-        for _ in range(5):
-            temp_db.record_view(image_path)
-            time.sleep(0.01)
-
-        # View count should be 5 (can't verify directly without querying)
-
     def test_multiple_images_tracking(self, temp_db):
         """Test tracking multiple images independently."""
         images = [f"/img{i}.jpg" for i in range(10)]
+
+        # Sync all images first
+        temp_db.sync_images(images)
 
         # View images in different orders
         for img in images[::2]:  # Even indices
