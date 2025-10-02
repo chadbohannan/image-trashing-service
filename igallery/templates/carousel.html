@@ -1,0 +1,389 @@
+{% extends "base.html" %}
+
+{% block title %}iGallery - Carousel{% endblock %}
+
+{% block extra_css %}
+<style>
+    .carousel-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 70vh;
+    }
+
+    .carousel-controls {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .mode-selector {
+        display: flex;
+        gap: 10px;
+        padding: 5px;
+        background-color: #2a2a2a;
+        border-radius: 8px;
+    }
+
+    .mode-btn {
+        padding: 10px 20px;
+        background-color: transparent;
+        color: #e0e0e0;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .mode-btn:hover {
+        background-color: #3a3a3a;
+    }
+
+    .mode-btn.active {
+        background-color: #4a9eff;
+        color: white;
+    }
+
+    .carousel-image-wrapper {
+        position: relative;
+        max-width: 90%;
+        max-height: 70vh;
+        margin-bottom: 20px;
+        background-color: #2a2a2a;
+        border-radius: 8px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .carousel-image {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+    }
+
+    .loading {
+        color: #888;
+        font-size: 1.2rem;
+        padding: 60px;
+    }
+
+    .image-info {
+        margin-top: 15px;
+        text-align: center;
+    }
+
+    .image-name {
+        font-size: 1.1rem;
+        color: #e0e0e0;
+        margin-bottom: 15px;
+    }
+
+    .image-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+    }
+
+    .autoplay-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 15px;
+        background-color: #2a2a2a;
+        border-radius: 8px;
+    }
+
+    .autoplay-controls label {
+        font-size: 0.95rem;
+    }
+
+    .autoplay-controls input[type="number"] {
+        width: 60px;
+        padding: 5px;
+        background-color: #1a1a1a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #e0e0e0;
+        text-align: center;
+    }
+
+    .play-pause-btn {
+        padding: 10px 24px;
+        font-size: 1.1rem;
+    }
+
+    .hidden {
+        display: none;
+    }
+
+    .toast {
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        background-color: #28a745;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 16px;
+        z-index: 2000;
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.3s, transform 0.3s;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .toast-error {
+        background-color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="carousel-container">
+    <div class="carousel-controls">
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="random" onclick="setMode('random')">
+                🎲 Random
+            </button>
+            <button class="mode-btn" data-mode="slideshow" onclick="setMode('slideshow')">
+                🎬 Slideshow
+            </button>
+        </div>
+
+        <div class="autoplay-controls">
+            <button class="btn play-pause-btn" onclick="toggleAutoplay()">
+                <span id="play-icon">▶️</span>
+            </button>
+            <label>
+                Interval (seconds):
+                <input type="number" id="interval-input" value="3" min="1" max="60">
+            </label>
+        </div>
+
+        <button class="btn" onclick="nextImage()">Next Image →</button>
+    </div>
+
+    <div class="carousel-image-wrapper" id="image-wrapper">
+        <div class="loading" id="loading">Click "Next Image" or enable autoplay to start</div>
+        <img class="carousel-image hidden" id="carousel-image" src="" alt="">
+    </div>
+
+    <div class="image-info" id="image-info" style="display: none;">
+        <div class="image-name" id="image-name"></div>
+        <div class="image-actions">
+            <button class="btn btn-danger" onclick="trashCurrentImage()">🗑️ Move to Trash</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentMode = 'random';
+let currentImageName = null;
+let currentImagePath = null;  // Track the relative directory path for the current image
+let autoplayInterval = null;
+let isPlaying = false;
+const currentPath = "{{ current_path }}";
+
+function setMode(mode) {
+    currentMode = mode;
+
+    // Update button states
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+}
+
+function nextImage() {
+    const loading = document.getElementById('loading');
+    const image = document.getElementById('carousel-image');
+    const info = document.getElementById('image-info');
+
+    loading.classList.remove('hidden');
+    image.classList.add('hidden');
+    info.style.display = 'none';
+
+    fetch(`/carousel/next?mode=${currentMode}&path=${currentPath}`)
+        .then(response => {
+            if (!response.ok) {
+                // Try to parse error JSON
+                return response.text().then(text => {
+                    try {
+                        const data = JSON.parse(text);
+                        throw new Error(data.error || `Server error (${response.status})`);
+                    } catch (parseError) {
+                        // If JSON parsing fails, show the raw response
+                        if (text) {
+                            throw new Error(`Server error (${response.status}): ${text.substring(0, 100)}`);
+                        } else {
+                            throw new Error(`Server error (${response.status}): Empty response`);
+                        }
+                    }
+                });
+            }
+            return response.text().then(text => {
+                if (!text) {
+                    throw new Error('Empty response from server');
+                }
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+                }
+            });
+        })
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                loading.classList.add('hidden');
+                return;
+            }
+
+            currentImageName = data.image_name;
+            currentImagePath = data.image_path;  // Store the directory path
+            image.src = data.image_url;
+            image.onload = function() {
+                loading.classList.add('hidden');
+                image.classList.remove('hidden');
+                document.getElementById('image-name').textContent = currentImageName;
+                info.style.display = 'block';
+            };
+        })
+        .catch(error => {
+            alert('Error loading image: ' + error.message);
+            loading.classList.add('hidden');
+        });
+}
+
+function toggleAutoplay() {
+    if (isPlaying) {
+        stopAutoplay();
+    } else {
+        startAutoplay();
+    }
+}
+
+function startAutoplay() {
+    const intervalSeconds = parseInt(document.getElementById('interval-input').value) || 3;
+    const intervalMs = intervalSeconds * 1000;
+
+    // Load first image immediately
+    nextImage();
+
+    autoplayInterval = setInterval(nextImage, intervalMs);
+    isPlaying = true;
+
+    document.getElementById('play-icon').textContent = '⏸️';
+    document.querySelector('.play-pause-btn').style.backgroundColor = '#28a745';
+}
+
+function stopAutoplay() {
+    if (autoplayInterval) {
+        clearInterval(autoplayInterval);
+        autoplayInterval = null;
+    }
+    isPlaying = false;
+
+    document.getElementById('play-icon').textContent = '▶️';
+    document.querySelector('.play-pause-btn').style.backgroundColor = '#4a9eff';
+}
+
+function trashCurrentImage() {
+    if (!currentImageName) {
+        return;
+    }
+
+    const imageName = currentImageName;
+    const imagePath = currentImagePath || '';
+
+    fetch(`/trash?path=${imagePath}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ image_name: imageName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(`Moved "${imageName}" to trash`);
+            // Load next image
+            nextImage();
+        } else {
+            showToast('Error moving image to trash: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(error => {
+        showToast('Error: ' + error, 'error');
+    });
+}
+
+function showToast(message, type = 'success') {
+    // Remove existing toast if any
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Trigger animation
+    setTimeout(() => toast.classList.add('show'), 10);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    switch(e.key) {
+        case 'ArrowRight':
+        case ' ':
+            e.preventDefault();
+            nextImage();
+            break;
+        case 'p':
+            e.preventDefault();
+            toggleAutoplay();
+            break;
+        case 'r':
+            e.preventDefault();
+            setMode('random');
+            break;
+        case 's':
+            e.preventDefault();
+            setMode('slideshow');
+            break;
+        case 'Delete':
+            e.preventDefault();
+            trashCurrentImage();
+            break;
+    }
+});
+
+// Update interval when input changes during autoplay
+document.getElementById('interval-input').addEventListener('change', function() {
+    if (isPlaying) {
+        stopAutoplay();
+        startAutoplay();
+    }
+});
+</script>
+{% endblock %}

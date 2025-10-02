@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_backend"
+
+[project]
+name = "igallery"
+version = "0.1.0"
+description = "A web-based image gallery service with slideshow and organization features"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "flask>=2.3.0",
+    "pillow>=10.0.0",
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+igallery = "igallery.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=igallery --cov-report=html --cov-report=term"
