@@ -37,7 +37,7 @@
 
     .thumbnail-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
         gap: 20px;
         margin-bottom: 30px;
     }
@@ -296,14 +296,14 @@
     {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="/?path={{ current_path }}&page={{ page - 1 }}">← Previous</a>
+        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}">← Previous</a>
         {% endif %}
 
         <span class="current">{{ page }}</span>
         <span>of {{ total_pages }}</span>
 
         {% if page < total_pages %}
-        <a href="/?path={{ current_path }}&page={{ page + 1 }}">Next →</a>
+        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}">Next →</a>
         {% endif %}
     </div>
     {% endif %}
@@ -324,6 +324,33 @@
 
 {% block extra_js %}
 <script>
+// Calculate optimal per_page based on viewport and thumbnail size
+function calculatePerPage() {
+    const thumbnailMinSize = 125; // minmax(125px, 1fr) from CSS
+    const gap = 20; // gap from CSS
+    const viewportWidth = window.innerWidth;
+
+    // Calculate how many thumbnails fit per row
+    const thumbnailsPerRow = Math.floor((viewportWidth + gap) / (thumbnailMinSize + gap));
+
+    // Calculate for 4 rows minimum
+    const calculatedPerPage = thumbnailsPerRow * 4;
+
+    // Return at least 20
+    return Math.max(calculatedPerPage, 20);
+}
+
+// Check if we need to reload with calculated per_page
+const urlParams = new URLSearchParams(window.location.search);
+const currentPerPage = parseInt(urlParams.get('per_page')) || 20;
+const optimalPerPage = calculatePerPage();
+
+if (currentPerPage !== optimalPerPage && !urlParams.has('per_page')) {
+    // Reload with optimal per_page if not explicitly set
+    urlParams.set('per_page', optimalPerPage);
+    window.location.search = urlParams.toString();
+}
+
 // Initialize variables for gallery and lightbox
 let currentPage = {{ page }};
 let totalPages = {{ total_pages }};
@@ -401,7 +428,8 @@ function updateLightboxImage() {
 }
 
 async function loadImagesForPage(pageNumber, initialImageIndex) {
-    const response = await fetch(`/?path=${currentPath}&page=${pageNumber}&per_page=20&fetch_images_only=true`);
+    const perPage = optimalPerPage || 20;
+    const response = await fetch(`/?path=${currentPath}&page=${pageNumber}&per_page=${perPage}&fetch_images_only=true`);
     const data = await response.json();
 
     if (data.success) {
@@ -437,14 +465,15 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
         // Update the pagination links at the bottom of the page
         const paginationDiv = document.querySelector('.pagination');
         if (paginationDiv) {
+            const perPage = optimalPerPage || 20;
             let newPaginationHtml = '';
             if (currentPage > 1) {
-                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}">← Previous</a>`;
+                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}&per_page=${perPage}">← Previous</a>`;
             }
             newPaginationHtml += `<span class="current">${currentPage}</span>`;
             newPaginationHtml += `<span>of ${totalPages}</span>`;
             if (currentPage < totalPages) {
-                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}">Next →</a>`;
+                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}&per_page=${perPage}">Next →</a>`;
             }
             paginationDiv.innerHTML = newPaginationHtml;
         }

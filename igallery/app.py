@@ -160,6 +160,7 @@ def create_app(
             images=[Path(img).name for img in images],
             subdirectories=subdirectories,
             page=page,
+            per_page=per_page,
             total_pages=total_pages,
             current_path=relative_path,
             breadcrumbs=breadcrumbs,
