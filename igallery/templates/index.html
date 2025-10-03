@@ -567,20 +567,21 @@ function trashCurrentLightboxImage(event) {
     }
 }
 
-function trashImage(imageName, event, fromLightbox = false) {
+async function trashImage(imageName, event, fromLightbox = false) {
     if (event) event.stopPropagation();
 
     const currentPath = "{{ current_path }}";
 
-    fetch(`/trash?path=${currentPath}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image_name: imageName })
-    })
-    .then(response => response.json())
-    .then(data => {
+    try {
+        const response = await fetch(`/trash?path=${currentPath}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ image_name: imageName })
+        });
+        const data = await response.json();
+
         if (data.success) {
             // Remove thumbnail from page
             const item = document.querySelector(`[data-image="${imageName}"]`);
@@ -588,8 +589,11 @@ function trashImage(imageName, event, fromLightbox = false) {
                 item.remove();
             }
 
-            // Rebuild galleryImages array and handle lightbox
+            // Find index and determine if we're at the end BEFORE removal
             const index = galleryImages.findIndex(img => img.name === imageName);
+            const wasAtEnd = (index !== -1 && index === galleryImages.length - 1);
+
+            // Now remove from galleryImages array
             if (index !== -1) {
                 galleryImages.splice(index, 1);
             }
@@ -597,13 +601,67 @@ function trashImage(imageName, event, fromLightbox = false) {
             // Re-initialize lightbox click handlers with updated indices
             initLightboxThumbnails();
 
-            // Handle lightbox behavior when deleting from lightbox
+            // Check if page is now empty
+            const remainingItems = document.querySelectorAll('.thumbnail-item');
+            if (remainingItems.length === 0) {
+                // Page is empty - navigate to previous page if possible
+                if (fromLightbox && currentPage > 1) {
+                    // Load previous page and open lightbox on last image
+                    await loadImagesForPage(currentPage - 1, -1);
+                    return;
+                } else if (currentPage > 1) {
+                    // Not in lightbox, just navigate to previous page
+                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}`;
+                    return;
+                } else {
+                    // First page is empty, just reload
+                    location.reload();
+                    return;
+                }
+            }
+
+            // Store count before fetching replacement
+            const imagesBeforeReplace = galleryImages.length;
+
+            // Fetch replacement image to maintain page size
+            await fetchReplacementImage();
+
+            // Handle lightbox index adjustment after replacement fetch
             if (fromLightbox) {
                 if (galleryImages.length === 0) {
-                    // No more images, close lightbox
+                    // No more images in current view, close lightbox
                     closeLightbox();
-                } else {
-                    // Stay at same index (shows next image), or go back one if we deleted the last image
+                    return;
+                }
+
+                const gotReplacement = (galleryImages.length > imagesBeforeReplace);
+
+                // If we deleted the last image and got a replacement, stay at that index
+                if (wasAtEnd && gotReplacement) {
+                    // currentImageIndex stays the same (now points to replacement at end)
+                    updateLightboxImage();
+                    recordImageView(galleryImages[currentImageIndex].name);
+                }
+                // If we deleted the last image but no replacement available
+                else if (wasAtEnd && !gotReplacement) {
+                    // Index is now out of bounds since we deleted the last item
+                    // Need to navigate back
+                    if (galleryImages.length > 0) {
+                        // Still have images on current page, go to the new last image
+                        currentImageIndex = galleryImages.length - 1;
+                        updateLightboxImage();
+                        recordImageView(galleryImages[currentImageIndex].name);
+                    } else if (currentPage > 1) {
+                        // Page is empty, need to go to previous page
+                        await loadImagesForPage(currentPage - 1, -1);
+                    } else {
+                        // Was the only image in the entire gallery
+                        closeLightbox();
+                    }
+                }
+                // Otherwise (didn't delete the last image), just update normally
+                else {
+                    // Adjust index if somehow out of bounds
                     if (currentImageIndex >= galleryImages.length) {
                         currentImageIndex = galleryImages.length - 1;
                     }
@@ -611,19 +669,72 @@ function trashImage(imageName, event, fromLightbox = false) {
                     recordImageView(galleryImages[currentImageIndex].name);
                 }
             }
-
-            // Check if page is now empty
-            const remainingItems = document.querySelectorAll('.thumbnail-item');
-            if (remainingItems.length === 0) {
-                location.reload();
-            }
         } else {
             showToast('Error moving image to trash', 'error');
         }
-    })
-    .catch(error => {
+    } catch (error) {
         showToast('Error: ' + error, 'error');
-    });
+    }
+}
+
+async function fetchReplacementImage() {
+    try {
+        const perPage = optimalPerPage || 20;
+        const response = await fetch(`/?path=${currentPath}&page=${currentPage}&per_page=${perPage}&fetch_images_only=true`);
+        const data = await response.json();
+
+        if (data.success) {
+            // Find images in server response that we don't have yet
+            const currentImageNames = new Set(galleryImages.map(img => img.name));
+            const newImages = data.images.filter(name => !currentImageNames.has(name));
+
+            if (newImages.length > 0) {
+                const thumbnailGrid = document.getElementById('thumbnail-grid');
+
+                // Add each new image
+                newImages.forEach(newImageName => {
+                    // Create new thumbnail
+                    const div = document.createElement('div');
+                    div.className = 'thumbnail-item';
+                    div.setAttribute('data-image', newImageName);
+                    div.innerHTML = `
+                        <div class="thumbnail-wrapper">
+                            <img
+                                src="/thumbnail/${newImageName}?path=${currentPath}"
+                                alt="${newImageName}"
+                                class="thumbnail-img"
+                            >
+                        </div>
+                        <div class="thumbnail-actions">
+                            <span class="thumbnail-name">${newImageName}</span>
+                            <button class="trash-btn" onclick="trashImage('${newImageName}', event)">🗑️</button>
+                        </div>
+                    `;
+                    thumbnailGrid.appendChild(div);
+
+                    // Add to galleryImages array
+                    galleryImages.push({
+                        name: newImageName,
+                        url: `/image/${newImageName}?path=${currentPath}`
+                    });
+                });
+
+                // Re-initialize lightbox click handlers
+                initLightboxThumbnails();
+            }
+
+            // Update total pages in case it changed
+            if (data.total_pages !== undefined && data.total_pages !== totalPages) {
+                totalPages = data.total_pages;
+                if (fromLightbox) {
+                    updateLightboxImage(); // Update navigation button states
+                }
+            }
+        }
+    } catch (error) {
+        // Silently fail - page will just have fewer items
+        console.error('Failed to fetch replacement image:', error);
+    }
 }
 
 function showToast(message, type = 'success') {

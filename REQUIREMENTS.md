@@ -31,6 +31,12 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
     - Update gallery grid in background
 - Disable navigation buttons when at absolute boundaries (first image of first page, last image of last page)
 - Record timestamp of image view when displayed
+- Trash behavior in lightbox:
+  - **CRITICAL**: After trashing an image, fetch replacement to maintain page size
+  - If last image on page is trashed and replacement available, show replacement
+  - If last image on last page is trashed with no replacement, navigate to previous image
+  - If page becomes empty after trash, reload page
+  - Maintain proper currentImageIndex after trash operations
 
 ### 3. Carousel (Slideshow)
 - Full-screen slideshow mode
