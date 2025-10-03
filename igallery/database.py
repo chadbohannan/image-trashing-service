@@ -21,56 +21,80 @@ class Database:
 
     def _init_schema(self):
         """Create database tables if they don't exist."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-
-            # Thumbnail cache table - stores thumbnail as BLOB
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS thumbnails (
-                    image_path TEXT PRIMARY KEY,
-                    thumbnail_data BLOB NOT NULL,
-                    created_at REAL NOT NULL,
-                    image_mtime REAL NOT NULL,
-                    image_size INTEGER NOT NULL
-                )
-            """)
-
-            # Image metadata table (for view tracking)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS image_metadata (
-                    image_path TEXT PRIMARY KEY,
-                    last_viewed_at REAL
-                )
-            """)
-
-            # Trash table - tracks trashed images
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS trash (
-                    trash_path TEXT PRIMARY KEY,
-                    original_path TEXT NOT NULL,
-                    trashed_at REAL NOT NULL
-                )
-            """)
-
-            # Create indexes for performance
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_last_viewed
-                ON image_metadata(last_viewed_at)
-            """)
-
-            cursor.execute("""
-                CREATE INDEX IF NOT EXISTS idx_trashed_at
-                ON trash(trashed_at DESC)
-            """)
-
-            conn.commit()
-
-    @contextmanager
-    def _get_connection(self):
-        """Context manager for database connections."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
+            self._init_schema_on_connection(conn)
+        finally:
+            conn.close()
+
+    def _init_schema_on_connection(self, conn):
+        """Create database tables on an existing connection.
+
+        Args:
+            conn: Active SQLite connection
+        """
+        cursor = conn.cursor()
+
+        # Thumbnail cache table - stores thumbnail as BLOB
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS thumbnails (
+                image_path TEXT PRIMARY KEY,
+                thumbnail_data BLOB NOT NULL,
+                created_at REAL NOT NULL,
+                image_mtime REAL NOT NULL,
+                image_size INTEGER NOT NULL
+            )
+        """)
+
+        # Image metadata table (for view tracking)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS image_metadata (
+                image_path TEXT PRIMARY KEY,
+                last_viewed_at REAL
+            )
+        """)
+
+        # Trash table - tracks trashed images
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trash (
+                trash_path TEXT PRIMARY KEY,
+                original_path TEXT NOT NULL,
+                trashed_at REAL NOT NULL
+            )
+        """)
+
+        # Create indexes for performance
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_last_viewed
+            ON image_metadata(last_viewed_at)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_trashed_at
+            ON trash(trashed_at DESC)
+        """)
+
+        conn.commit()
+
+    @contextmanager
+    def _get_connection(self):
+        """Context manager for database connections.
+
+        Automatically reinitializes schema if database was deleted/corrupted.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            # Always check if schema exists and create if missing
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='thumbnails'"
+            )
+            if not cursor.fetchone():
+                # Schema missing - reinitialize
+                self._init_schema_on_connection(conn)
+
             yield conn
         finally:
             conn.close()
@@ -328,6 +352,67 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM trash")
+            conn.commit()
+
+    def sync_trash_folder(self, trash_folder_path: str, gallery_root_path: str):
+        """Sync trash folder with database, adding orphaned trash images.
+
+        This recovers from database deletion by discovering existing trash files
+        and reconstructing their database records.
+
+        Args:
+            trash_folder_path: Absolute path to trash folder
+            gallery_root_path: Absolute path to gallery root
+        """
+        from pathlib import Path
+
+        trash_path = Path(trash_folder_path)
+        if not trash_path.exists():
+            return
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get existing trash records from database
+            cursor.execute("SELECT trash_path FROM trash")
+            existing_trash_paths = {row['trash_path'] for row in cursor.fetchall()}
+
+            # Scan trash folder for all image files
+            from igallery.thumbnail_service import ThumbnailService
+
+            for root, dirs, files in __import__('os').walk(trash_path):
+                for file in files:
+                    file_path = Path(root) / file
+                    if ThumbnailService.is_image_file(str(file_path)):
+                        abs_trash_path = str(file_path.resolve())
+
+                        # Skip if already in database
+                        if abs_trash_path in existing_trash_paths:
+                            continue
+
+                        # Reconstruct original path
+                        # The trash folder preserves the subfolder structure
+                        try:
+                            rel_to_trash = file_path.relative_to(trash_path)
+                            original_path = str((Path(gallery_root_path) / rel_to_trash).resolve())
+                        except ValueError:
+                            # Fallback: use relative path as-is
+                            original_path = str((Path(gallery_root_path) / file_path.name).resolve())
+
+                        # Add to database with file mtime as trashed_at
+                        try:
+                            trashed_at = file_path.stat().st_mtime
+                        except (OSError, FileNotFoundError):
+                            trashed_at = time.time()
+
+                        cursor.execute(
+                            """
+                            INSERT OR REPLACE INTO trash (trash_path, original_path, trashed_at)
+                            VALUES (?, ?, ?)
+                            """,
+                            (abs_trash_path, original_path, trashed_at)
+                        )
+
             conn.commit()
 
     def cleanup_orphaned_records(self, valid_image_paths: set[str], valid_trash_paths: set[str]):

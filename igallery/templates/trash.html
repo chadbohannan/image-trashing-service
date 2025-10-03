@@ -34,6 +34,21 @@
         cursor: not-allowed;
     }
 
+    .delete-metadata-btn {
+        background-color: #6c757d;
+        padding: 12px 24px;
+        font-size: 1rem;
+    }
+
+    .delete-metadata-btn:hover {
+        background-color: #5a6268;
+    }
+
+    .delete-metadata-btn:disabled {
+        background-color: #555;
+        cursor: not-allowed;
+    }
+
     .thumbnail-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
@@ -166,6 +181,17 @@
         Delete {{ image_count }} Image{{ 's' if image_count != 1 else '' }}
     </button>
 </div>
+{% else %}
+<div class="trash-header">
+    <button
+        id="delete-metadata-btn"
+        class="btn delete-metadata-btn"
+        onclick="deleteMetadata()"
+        title="Delete all cached thumbnails and image view timestamps. This will reset the sequence of images presented in the Carousel to file modification time order. This action cannot be undone."
+    >
+        Delete All Metadata
+    </button>
+</div>
 {% endif %}
 
 {% if images %}
@@ -284,6 +310,41 @@ function deleteAllTrash() {
         showToast('Error: ' + error, 'error');
         btn.disabled = false;
         btn.textContent = `Delete ${currentImageCount} image${currentImageCount !== 1 ? 's' : ''}`;
+    });
+}
+
+function deleteMetadata() {
+    if (!confirm('Are you sure you want to delete all metadata? This will:\n\n• Delete all cached thumbnails\n• Delete all image view timestamps\n• Reset carousel ordering to file modification time\n\nThis action cannot be undone.')) {
+        return;
+    }
+
+    const btn = document.getElementById('delete-metadata-btn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+
+    fetch('/metadata/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Metadata deleted successfully. Thumbnails will regenerate as needed.');
+            setTimeout(() => {
+                location.href = '/';
+            }, 2000);
+        } else {
+            showToast('Error deleting metadata: ' + (data.error || 'Unknown error'), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Delete All Metadata';
+        }
+    })
+    .catch(error => {
+        showToast('Error: ' + error, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Delete All Metadata';
     });
 }
 

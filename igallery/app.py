@@ -292,6 +292,10 @@ def create_app(
     @app.route('/trash-view')
     def trash_view():
         """View images in trash."""
+        # Sync trash folder with database (recovers from database deletion)
+        trash_dir = Path(gallery_root) / "trash"
+        db.sync_trash_folder(str(trash_dir), gallery_root)
+
         # Get trashed images from database
         trashed_images = db.list_trashed_images()
 
@@ -427,6 +431,22 @@ def create_app(
             return jsonify({'success': True, 'deleted': deleted_count})
         except Exception as e:
             app.logger.error(f"Error deleting trash: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/metadata/delete', methods=['POST'])
+    def delete_metadata():
+        """Delete the database file to clear all metadata."""
+        try:
+            db_path_obj = Path(app.config['DB_PATH'])
+
+            if db_path_obj.exists():
+                # Delete the database file
+                db_path_obj.unlink()
+                return jsonify({'success': True, 'message': 'Database deleted successfully'})
+            else:
+                return jsonify({'success': True, 'message': 'Database file does not exist'})
+        except Exception as e:
+            app.logger.error(f"Error deleting database: {e}")
             return jsonify({'error': str(e)}), 500
 
     return app
