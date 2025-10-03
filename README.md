@@ -1,16 +1,14 @@
-# iGallery
+# Image Trashing Service
 
-A web-based image gallery service with intelligent slideshow features, thumbnail caching, and image organization capabilities.
+A web-based image management tool for reviewing and organizing large image collections. Browse images in a gallery view or use the intelligent carousel mode to systematically review images and quickly trash unwanted ones.
 
 ## Features
 
 - **Web Interface**: Clean, responsive web UI for browsing images
 - **Subfolder Navigation**: Browse through nested directories with breadcrumb navigation
 - **Paginated Thumbnails**: Efficient thumbnail generation with SQLite BLOB storage
-- **Carousel Modes**:
-  - **Random**: Select next image randomly
-  - **Slideshow**: Select least recently viewed image (intelligent progression)
-- **Image Management**: Move unwanted images to trash with one click
+- **Carousel Mode**: Intelligent slideshow that selects least recently viewed images (ensuring systematic review)
+- **Image Trashing**: Move unwanted images to trash with one click from any view
 - **Trash Management**: Review trashed images and permanently delete them
 - **Keyboard Shortcuts**: Full keyboard support for carousel navigation
 - **Database-Backed Thumbnails**: Thumbnails stored as BLOBs in SQLite (no filesystem clutter)
@@ -38,35 +36,27 @@ pip install -e .
 
 ### Starting the server
 
-Run iGallery in any directory containing images:
+Run the image trashing service from your terminal:
 
 ```bash
-igallery
+python run.py
 ```
 
-Or specify a directory:
+Or set a specific gallery directory:
 
 ```bash
-igallery --gallery-root /path/to/your/photos
+GALLERY_ROOT=/path/to/your/photos python run.py
 ```
 
-### Command-line options
-
-```bash
-igallery --help
-```
-
-Options:
-- `--host`: Host to bind to (default: 127.0.0.1)
-- `--port`: Port to bind to (default: 5000)
-- `--gallery-root`: Root directory for image gallery (default: current directory)
-
-### Accessing the gallery
+### Accessing the web interface
 
 Open your browser and navigate to:
-- Gallery view: `http://127.0.0.1:5000/`
-- Carousel view: `http://127.0.0.1:5000/carousel`
-- Trash view: `http://127.0.0.1:5000/trash-view`
+- Gallery view: `http://localhost:5001/`
+- Carousel view: `http://localhost:5001/carousel`
+- Trash view: `http://localhost:5001/trash-view`
+
+For network access from other devices:
+- Use your machine's IP: `http://192.168.1.x:5001/`
 
 ## Features in Detail
 
@@ -81,35 +71,31 @@ Open your browser and navigate to:
 
 ### Carousel View
 
-The carousel provides a focused viewing experience with two modes:
+The carousel provides a focused full-screen viewing experience for systematic image review.
 
-#### Random Mode
-Selects the next image randomly from the current directory.
-
-#### Slideshow Mode
-Intelligently selects the least recently viewed image, ensuring you see all images before repeating. Perfect for reviewing large collections without missing any images.
+#### Intelligent Image Selection
+Automatically selects the least recently viewed image, ensuring you see all images in order before repeating. For unviewed images, older images (by file modification time) are shown first. Perfect for reviewing large collections without missing any images.
 
 #### Controls
-- **Next Image**: Load the next image based on selected mode
-- **Autoplay**: Automatically advance images at a configurable interval
-- **Mode Toggle**: Switch between Random and Slideshow modes
+- **Next/Previous**: Navigate through image history or load new images
+- **Autoplay**: Automatically advance images at a configurable interval (default: 3 seconds)
 - **Trash**: Move the current image to trash and advance to the next
 
 #### Keyboard Shortcuts
 - `→` or `Space`: Next image
+- `←`: Previous image (navigates back through history)
 - `P`: Toggle autoplay
-- `R`: Switch to random mode
-- `S`: Switch to slideshow mode
-- `Delete`: Move current image to trash
-- `Esc`: Close lightbox (in gallery view)
+- `Backspace` or `Delete`: Move current image to trash
+- `Esc`: Exit carousel (return to gallery view)
 
 ## Technical Details
 
 ### Database
 
-iGallery uses SQLite to store:
+The application uses SQLite to store:
 - **Thumbnail cache**: Stores thumbnail image data as BLOBs with modification time tracking
-- **View history**: Tracks when each image was last viewed and total view count
+- **View history**: Tracks when each image was last viewed (timestamp-based)
+- **Trash records**: Tracks trashed images and their original locations
 - **Automatic cleanup**: On startup, removes records for images that no longer exist
 
 The database file `.igallery.db` is created in the gallery root directory.

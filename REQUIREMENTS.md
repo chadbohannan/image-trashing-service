@@ -148,9 +148,14 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 
 ## Known Issues to Avoid
 
-### Issue: Carousel showing duplicate images
-- **Cause**: Preloading was recording views prematurely
-- **Solution**: Add `preload=true` parameter to skip view recording
+### Issue: Carousel showing duplicate images / Wrong image ordering
+- **Cause**: Preloading images triggered view recording before user actually saw them
+- **Root cause**: When `new Image()` constructor loaded a preloaded image, it made a GET request to `/image/...` which recorded the view, even though the user hadn't seen the image yet
+- **Solution**:
+  - Add `preload=true` parameter to `/carousel/next` to skip database recording
+  - Add `preload=true` parameter to `/image/...` endpoint to skip view recording
+  - When preloading images, add `preload=true` to the image URL
+  - When displaying preloaded images, use the actual URL without `preload=true` and make a HEAD request to record the view
 
 ### Issue: Carousel showing all gallery images instead of subfolder
 - **Cause**: Collecting images from gallery root instead of current path

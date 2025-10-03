@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}iGallery - Carousel{% endblock %}
+{% block title %}Carousel - Image Trashing Service{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -330,17 +330,26 @@ function nextImage() {
         currentImageName = preloadedImage.name;
         currentImagePath = preloadedImage.path;
 
+        // Use the actual URL (without preload flag) for display and history
+        const displayUrl = preloadedImage.actualUrl || preloadedImage.url;
+
         // Add to history
         const imageData = {
             name: preloadedImage.name,
             path: preloadedImage.path,
-            url: preloadedImage.url
+            url: displayUrl
         };
 
         imageHistory.push(imageData);
         historyIndex = imageHistory.length - 1;
 
-        displayImage(preloadedImage.url, preloadedImage.name);
+        // Record view on server by fetching the image without preload flag
+        // This ensures the view is recorded when the user actually sees it
+        fetch(displayUrl, { method: 'HEAD' }).catch(() => {
+            // Ignore errors in view tracking
+        });
+
+        displayImage(displayUrl, preloadedImage.name);
 
         // Clear the preloaded image
         preloadedImage = null;
@@ -460,13 +469,16 @@ function preloadNextImage() {
             }
 
             // Create and preload the image
+            // IMPORTANT: Add preload=true to image URL to prevent view recording
+            const imageUrl = data.image_url + (data.image_url.includes('?') ? '&' : '?') + 'preload=true';
             preloadedImage = {
                 name: data.image_name,
                 path: data.image_path,
-                url: data.image_url,
+                url: imageUrl,
+                actualUrl: data.image_url,  // Store the actual URL without preload flag
                 img: new Image()
             };
-            preloadedImage.img.src = data.image_url;
+            preloadedImage.img.src = imageUrl;
         })
         .catch(() => {
             // Silently fail preload

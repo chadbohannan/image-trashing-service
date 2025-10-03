@@ -193,6 +193,7 @@ def create_app(
     def image(image_name):
         """Serve full-size image."""
         relative_path = request.args.get('path', '')
+        preload = request.args.get('preload', 'false') == 'true'
         current_dir = validate_gallery_path(relative_path)
 
         image_path = current_dir / image_name
@@ -200,8 +201,9 @@ def create_app(
         if not image_path.exists():
             abort(404)
 
-        # Record view
-        db.record_view(str(image_path))
+        # Record view only if not preloading
+        if not preload:
+            db.record_view(str(image_path))
 
         return send_file(str(image_path))
 
