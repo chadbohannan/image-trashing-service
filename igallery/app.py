@@ -435,8 +435,10 @@ def create_app(
 def main():
     """Main entry point for the application."""
     import argparse
+    import signal
+    import sys
 
-    parser = argparse.ArgumentParser(description='iGallery - Image Gallery Service')
+    parser = argparse.ArgumentParser(description='Image Trashing Service')
     parser.add_argument(
         '--host',
         default='0.0.0.0',
@@ -464,10 +466,20 @@ def main():
         db_path=db_path
     )
 
-    print(f"Starting iGallery on http://{args.host}:{args.port}")
+    print(f"Starting Image Trashing Service on http://{args.host}:{args.port}")
     print(f"Gallery root: {gallery_root}")
+    print("Press Ctrl+C to stop\n")
 
-    app.run(host=args.host, port=args.port, debug=True)
+    # Suppress Flask's shutdown messages
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+
+    try:
+        app.run(host=args.host, port=args.port, debug=True, use_reloader=False)
+    except (KeyboardInterrupt, SystemExit):
+        print("\nShutdown complete")
+        sys.exit(0)
 
 
 if __name__ == '__main__':

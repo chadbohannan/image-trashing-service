@@ -20,43 +20,82 @@ A web-based image management tool for reviewing and organizing large image colle
 ### Requirements
 
 - Python 3.8 or higher
-- pip
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
-### Install from source
+### Quick Start
+
+The `run.py` script automatically sets up the virtual environment and dependencies:
 
 ```bash
-# Clone or navigate to the directory
-cd igallery
+# Clone the repository
+git clone <repository-url>
+cd image-trashing-service
 
-# Install in development mode
+# Run with default settings (current directory)
+python3 run.py
+
+# Or specify a gallery directory
+python3 run.py /path/to/your/photos
+```
+
+The script will:
+1. Create a `.venv` virtual environment (if needed)
+2. Install dependencies automatically
+3. Start the web server
+4. Display local and network access URLs
+
+### Manual Installation
+
+If you prefer manual setup:
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -e .
+
+# Run the application
+python -m igallery.app --gallery-root /path/to/photos
 ```
 
 ## Usage
 
 ### Starting the server
 
-Run the image trashing service from your terminal:
+Simply run:
 
 ```bash
-python run.py
+python3 run.py images/
 ```
 
-Or set a specific gallery directory:
+You'll see output like:
 
-```bash
-GALLERY_ROOT=/path/to/your/photos python run.py
+```
+============================================================
+Image Trashing Service
+============================================================
+Gallery: /Users/you/photos
+
+Access URLs:
+  Local:   http://localhost:8000
+  Network: http://192.168.1.17:8000
+
+Press Ctrl+C to stop
+============================================================
 ```
 
 ### Accessing the web interface
 
 Open your browser and navigate to:
-- Gallery view: `http://localhost:5001/`
-- Carousel view: `http://localhost:5001/carousel`
-- Trash view: `http://localhost:5001/trash-view`
+- **Gallery view**: `http://localhost:8000/`
+- **Carousel view**: `http://localhost:8000/carousel`
+- **Trash view**: `http://localhost:8000/trash-view`
 
-For network access from other devices:
-- Use your machine's IP: `http://192.168.1.x:5001/`
+For network access from other devices (phones, tablets):
+- Use the Network URL shown at startup
+- All devices must be on the same local network
 
 ## Features in Detail
 
@@ -133,24 +172,27 @@ pytest --cov=igallery --cov-report=html
 ### Project Structure
 
 ```
-igallery/
-├── igallery/
+image-trashing-service/
+├── igallery/                   # Main application package
 │   ├── __init__.py
-│   ├── app.py                 # Flask application
-│   ├── database.py            # SQLite database management
-│   ├── thumbnail_service.py   # Thumbnail generation and caching
-│   ├── file_operations.py     # File system operations
+│   ├── app.py                  # Flask application and routes
+│   ├── database.py             # SQLite database management
+│   ├── thumbnail_service.py    # Thumbnail generation and caching
+│   ├── file_operations.py      # File system operations
 │   └── templates/
-│       ├── base.html
-│       ├── index.html         # Gallery view
-│       └── carousel.html      # Carousel view
+│       ├── base.html           # Base template with navigation
+│       ├── index.html          # Gallery view
+│       ├── carousel.html       # Carousel view
+│       └── trash.html          # Trash management view
 ├── tests/
 │   ├── test_app.py
 │   ├── test_database.py
 │   ├── test_thumbnail_service.py
 │   ├── test_file_operations.py
 │   └── test_integration.py
-├── pyproject.toml
+├── run.py                      # Simple launcher script
+├── pyproject.toml              # Python package configuration
+├── REQUIREMENTS.md             # Detailed requirements and known issues
 └── README.md
 ```
 
@@ -163,11 +205,20 @@ The application follows a modular architecture:
 3. **Web Layer** (`app.py`): Flask routes and request handling
 4. **Presentation Layer** (`templates/`): Jinja2 templates with embedded CSS and JavaScript
 
-## Security
+## Security Notes
 
+⚠️ **This tool is designed for local/trusted network use only.**
+
+- **No authentication**: Anyone with network access can view and trash images
+- **No encryption**: All traffic is unencrypted HTTP
 - Path traversal protection on all file operations
 - Files are served only from within the configured gallery root
 - Trash folder is excluded from directory listings
+
+**Recommended Use:**
+- Run on localhost only (use `127.0.0.1` instead of `0.0.0.0` in app.py if concerned)
+- Use on trusted local networks only
+- Do not expose to the internet
 
 ## License
 
