@@ -200,6 +200,19 @@
 
 {% block extra_js %}
 <script>
+let currentImageCount = {{ image_count }};
+
+function updateDeleteButton() {
+    const btn = document.getElementById('delete-all-btn');
+    if (btn) {
+        if (currentImageCount === 0) {
+            btn.style.display = 'none';
+        } else {
+            btn.textContent = `Delete ${currentImageCount} Image${currentImageCount !== 1 ? 's' : ''}`;
+        }
+    }
+}
+
 function restoreImage(trashPath, event) {
     event.stopPropagation();
 
@@ -223,7 +236,11 @@ function restoreImage(trashPath, event) {
                 item.remove();
             }
 
-            // Update count and check if page is now empty
+            // Decrement count and update button
+            currentImageCount--;
+            updateDeleteButton();
+
+            // Check if page is now empty
             const remainingItems = document.querySelectorAll('.thumbnail-item');
             if (remainingItems.length === 0) {
                 location.reload();
@@ -242,11 +259,6 @@ function restoreImage(trashPath, event) {
 }
 
 function deleteAllTrash() {
-    const imageCount = {{ image_count }};
-    if (!confirm(`⚠️ Permanently delete ${imageCount} image${imageCount !== 1 ? 's' : ''} from trash?\n\nThis action cannot be undone!`)) {
-        return;
-    }
-
     const btn = document.getElementById('delete-all-btn');
     btn.disabled = true;
     btn.textContent = 'Deleting...';
@@ -265,13 +277,13 @@ function deleteAllTrash() {
         } else {
             showToast('Error deleting trash: ' + (data.error || 'Unknown error'), 'error');
             btn.disabled = false;
-            btn.textContent = `Delete ${imageCount} image${imageCount !== 1 ? 's' : ''}`;
+            btn.textContent = `Delete ${currentImageCount} image${currentImageCount !== 1 ? 's' : ''}`;
         }
     })
     .catch(error => {
         showToast('Error: ' + error, 'error');
         btn.disabled = false;
-        btn.textContent = `Delete ${imageCount} image${imageCount !== 1 ? 's' : ''}`;
+        btn.textContent = `Delete ${currentImageCount} image${currentImageCount !== 1 ? 's' : ''}`;
     });
 }
 

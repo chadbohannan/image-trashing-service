@@ -295,16 +295,12 @@
 <div class="images">
     {% if total_pages > 1 %}
     <div class="pagination">
-        {% if page > 1 %}
-        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}">← Previous</a>
-        {% endif %}
+        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}" class="{% if page <= 1 %}disabled{% endif %}">← Previous</a>
 
         <span class="current">{{ page }}</span>
         <span>of {{ total_pages }}</span>
 
-        {% if page < total_pages %}
-        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}">Next →</a>
-        {% endif %}
+        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}" class="{% if page >= total_pages %}disabled{% endif %}">Next →</a>
     </div>
     {% endif %}
     <div class="thumbnail-grid" id="thumbnail-grid">
@@ -507,14 +503,18 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
         if (paginationDiv) {
             const perPage = optimalPerPage || 20;
             let newPaginationHtml = '';
-            if (currentPage > 1) {
-                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}&per_page=${perPage}">← Previous</a>`;
-            }
+
+            // Previous button - always visible, disabled if on first page
+            const prevDisabled = currentPage <= 1 ? 'disabled' : '';
+            newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}&per_page=${perPage}" class="${prevDisabled}">← Previous</a>`;
+
             newPaginationHtml += `<span class="current">${currentPage}</span>`;
             newPaginationHtml += `<span>of ${totalPages}</span>`;
-            if (currentPage < totalPages) {
-                newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}&per_page=${perPage}">Next →</a>`;
-            }
+
+            // Next button - always visible, disabled if on last page
+            const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+            newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}&per_page=${perPage}" class="${nextDisabled}">Next →</a>`;
+
             paginationDiv.innerHTML = newPaginationHtml;
         }
 
