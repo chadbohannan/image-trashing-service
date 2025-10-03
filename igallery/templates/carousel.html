@@ -324,9 +324,6 @@ function nextImage() {
         const loading = document.getElementById('loading');
         const image = document.getElementById('carousel-image');
 
-        loading.classList.remove('hidden');
-        image.classList.add('hidden');
-
         currentImageName = preloadedImage.name;
         currentImagePath = preloadedImage.path;
 
@@ -349,7 +346,13 @@ function nextImage() {
             // Ignore errors in view tracking
         });
 
-        displayImage(displayUrl, preloadedImage.name);
+        // Directly use the preloaded image element - it's already loaded!
+        image.src = preloadedImage.img.src;
+        loading.classList.add('hidden');
+        image.classList.remove('hidden');
+
+        // Preload the next image after current one is displayed
+        preloadNextImage();
 
         // Clear the preloaded image
         preloadedImage = null;

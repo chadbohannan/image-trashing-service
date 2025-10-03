@@ -407,6 +407,8 @@ updateGalleryImages([
 ]);
 
 let currentImageIndex = 0;
+let preloadedNextImage = null;  // Preloaded next image
+let preloadedPrevImage = null;  // Preloaded previous image
 
 function initLightboxThumbnails() {
     const thumbnails = document.querySelectorAll('.thumbnail-img');
@@ -440,7 +442,20 @@ function updateLightboxImage() {
     const nextBtn = document.getElementById('lightbox-next');
 
     const currentImage = galleryImages[currentImageIndex];
-    img.src = currentImage.url;
+
+    // Check if we have this image preloaded
+    if (preloadedNextImage && preloadedNextImage.index === currentImageIndex) {
+        // Use preloaded image
+        img.src = preloadedNextImage.img.src;
+        preloadedNextImage = null;
+    } else if (preloadedPrevImage && preloadedPrevImage.index === currentImageIndex) {
+        // Use preloaded image
+        img.src = preloadedPrevImage.img.src;
+        preloadedPrevImage = null;
+    } else {
+        // Load normally
+        img.src = currentImage.url;
+    }
 
     // Update button states
     if (currentImageIndex === 0 && currentPage === 1) {
@@ -453,6 +468,35 @@ function updateLightboxImage() {
         nextBtn.classList.add('disabled');
     } else {
         nextBtn.classList.remove('disabled');
+    }
+
+    // Preload adjacent images
+    preloadAdjacentImages();
+}
+
+function preloadAdjacentImages() {
+    // Preload next image
+    if (currentImageIndex < galleryImages.length - 1) {
+        const nextImage = galleryImages[currentImageIndex + 1];
+        preloadedNextImage = {
+            index: currentImageIndex + 1,
+            img: new Image()
+        };
+        preloadedNextImage.img.src = nextImage.url;
+    } else {
+        preloadedNextImage = null;
+    }
+
+    // Preload previous image
+    if (currentImageIndex > 0) {
+        const prevImage = galleryImages[currentImageIndex - 1];
+        preloadedPrevImage = {
+            index: currentImageIndex - 1,
+            img: new Image()
+        };
+        preloadedPrevImage.img.src = prevImage.url;
+    } else {
+        preloadedPrevImage = null;
     }
 }
 
@@ -489,6 +533,11 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
         currentPage = data.page;
         totalPages = data.total_pages;
         currentImageIndex = (initialImageIndex === -1) ? galleryImages.length - 1 : initialImageIndex;
+
+        // Clear preload cache when changing pages
+        preloadedNextImage = null;
+        preloadedPrevImage = null;
+
         updateLightboxImage();
         recordImageView(galleryImages[currentImageIndex].name);
 
@@ -665,6 +714,9 @@ async function trashImage(imageName, event, fromLightbox = false) {
                     if (currentImageIndex >= galleryImages.length) {
                         currentImageIndex = galleryImages.length - 1;
                     }
+                    // Clear preload cache since indices changed
+                    preloadedNextImage = null;
+                    preloadedPrevImage = null;
                     updateLightboxImage();
                     recordImageView(galleryImages[currentImageIndex].name);
                 }
