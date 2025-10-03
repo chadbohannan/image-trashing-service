@@ -99,6 +99,7 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 
 ### Database
 - SQLite database: `.igallery.db`
+- Located in gallery root directory (same location as images)
 - No migrations - clean schema on fresh install
 - Tables: `thumbnails`, `image_metadata`, `trash`
 - Foreign key relationships not enforced (file-based storage)

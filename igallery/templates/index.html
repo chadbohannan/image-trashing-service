@@ -293,6 +293,20 @@
 
 {% if images %}
 <div class="images">
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}">← Previous</a>
+        {% endif %}
+
+        <span class="current">{{ page }}</span>
+        <span>of {{ total_pages }}</span>
+
+        {% if page < total_pages %}
+        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
     <div class="thumbnail-grid" id="thumbnail-grid">
         {% for image in images %}
         <div class="thumbnail-item" data-image="{{ image }}">
@@ -310,21 +324,6 @@
         </div>
         {% endfor %}
     </div>
-
-    {% if total_pages > 1 %}
-    <div class="pagination">
-        {% if page > 1 %}
-        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}">← Previous</a>
-        {% endif %}
-
-        <span class="current">{{ page }}</span>
-        <span>of {{ total_pages }}</span>
-
-        {% if page < total_pages %}
-        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}">Next →</a>
-        {% endif %}
-    </div>
-    {% endif %}
 </div>
 {% elif not subdirectories %}
 <div class="empty-message">
