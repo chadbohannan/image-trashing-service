@@ -369,5 +369,25 @@ function showToast(message, type = 'success') {
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // ESC navigates back to gallery root
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        window.location.href = '/';
+        return;
+    }
+
+    // Delete/Backspace triggers delete all
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault(); // Prevent browser back navigation
+
+        const deleteAllBtn = document.getElementById('delete-all-btn');
+        if (deleteAllBtn && !deleteAllBtn.disabled) {
+            deleteAllTrash();
+        }
+    }
+});
 </script>
 {% endblock %}

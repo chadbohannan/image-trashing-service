@@ -878,12 +878,38 @@ function showToast(message, type = 'success') {
 // Keyboard navigation
 document.addEventListener('keydown', function(e) {
     const lightbox = document.getElementById('lightbox');
-    if (!lightbox.classList.contains('active')) return;
+    const lightboxActive = lightbox.classList.contains('active');
+
+    // Handle ESC key
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        if (lightboxActive) {
+            // Close lightbox
+            closeLightbox();
+        } else {
+            // Navigate up one directory or to trash
+            if (currentPath) {
+                // In a subfolder - go up one level
+                const pathParts = currentPath.split('/');
+                pathParts.pop(); // Remove last segment
+                const parentPath = pathParts.join('/');
+                if (parentPath) {
+                    window.location.href = `/?path=${parentPath}`;
+                } else {
+                    window.location.href = '/';
+                }
+            } else {
+                // At root - go to trash
+                window.location.href = '/trash-view';
+            }
+        }
+        return;
+    }
+
+    // Other keys only work when lightbox is active
+    if (!lightboxActive) return;
 
     switch(e.key) {
-        case 'Escape':
-            closeLightbox();
-            break;
         case 'ArrowLeft':
             prevImage();
             break;
