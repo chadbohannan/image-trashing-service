@@ -182,12 +182,16 @@
         font-size: 40px;
         cursor: pointer;
         z-index: 300;
+        opacity: 0;
+        transition: opacity 0.3s, color 0.2s;
+    }
+
+    .carousel-close.controls-visible {
         opacity: 0.7;
-        transition: opacity 0.2s, color 0.2s;
     }
 
     .carousel-close:hover {
-        opacity: 1;
+        opacity: 1 !important;
         color: #4a9eff;
     }
 
@@ -203,12 +207,16 @@
         background-color: transparent;
         padding: 8px 16px;
         border-radius: 8px;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+
+    .carousel-trash.controls-visible {
         opacity: 0.7;
-        transition: opacity 0.2s;
     }
 
     .carousel-trash:hover {
-        opacity: 1;
+        opacity: 1 !important;
     }
 
     .toast {
@@ -705,11 +713,15 @@ function showControls() {
     const navPrev = document.getElementById('nav-prev');
     const navNext = document.getElementById('nav-next');
     const shortcuts = document.getElementById('shortcuts-hint');
+    const closeBtn = document.querySelector('.carousel-close');
+    const trashBtn = document.querySelector('.carousel-trash');
 
     controls.classList.add('controls-visible');
     navPrev.classList.add('controls-visible');
     navNext.classList.add('controls-visible');
     shortcuts.classList.add('controls-visible');
+    closeBtn.classList.add('controls-visible');
+    trashBtn.classList.add('controls-visible');
 
     clearTimeout(controlsTimeout);
     controlsTimeout = setTimeout(() => {
@@ -717,6 +729,8 @@ function showControls() {
         navPrev.classList.remove('controls-visible');
         navNext.classList.remove('controls-visible');
         shortcuts.classList.remove('controls-visible');
+        closeBtn.classList.remove('controls-visible');
+        trashBtn.classList.remove('controls-visible');
     }, 2000);
 }
 

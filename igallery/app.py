@@ -134,14 +134,13 @@ def create_app(
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 20))
 
-        images, total_pages = file_ops.get_page(page, per_page)
-        subdirectories = file_ops.list_subdirectories()
+        items, total_pages = file_ops.get_page_with_directories(page, per_page)
 
         # If this is an AJAX request, return JSON
         if request.args.get('fetch_images_only') == 'true':
             return jsonify({
                 'success': True,
-                'images': [Path(img).name for img in images],
+                'items': items,
                 'page': page,
                 'total_pages': total_pages
             })
@@ -156,8 +155,7 @@ def create_app(
 
         return render_template(
             'index.html',
-            images=[Path(img).name for img in images],
-            subdirectories=subdirectories,
+            items=items,
             page=page,
             per_page=per_page,
             total_pages=total_pages,

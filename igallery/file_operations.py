@@ -147,6 +147,72 @@ class FileOperations:
 
         return images[start_idx:end_idx], total_pages
 
+    def get_page_with_directories(self, page: int, per_page: int = 20) -> Tuple[List[dict], int]:
+        """Get paginated list of directories and images combined.
+
+        Directories appear first, followed by images.
+
+        Args:
+            page: Page number (1-indexed)
+            per_page: Number of items per page
+
+        Returns:
+            Tuple of (list of items with type indicators, total number of pages)
+            Each item is a dict with:
+                - 'type': 'directory' or 'image'
+                - 'name': directory name or image filename
+                - 'path': full path (for images)
+                - 'first_image': first image filename in directory (for directories only)
+        """
+        subdirs = self.list_subdirectories()
+        images = self.list_images()
+
+        # Build combined list: directories first, then images
+        items = []
+        for subdir in subdirs:
+            # Get first image in subdirectory (non-recursive)
+            subdir_path = self.current_dir / subdir
+            first_image = None
+            try:
+                # Get all images and sort to ensure consistent ordering
+                images_in_subdir = []
+                for entry in subdir_path.iterdir():
+                    if entry.is_file() and ThumbnailService.is_image_file(str(entry)):
+                        images_in_subdir.append(entry.name)
+
+                if images_in_subdir:
+                    first_image = sorted(images_in_subdir)[0]
+            except PermissionError:
+                pass
+
+            items.append({
+                'type': 'directory',
+                'name': subdir,
+                'first_image': first_image
+            })
+        for image_path in images:
+            items.append({
+                'type': 'image',
+                'name': Path(image_path).name,
+                'path': image_path
+            })
+
+        total_items = len(items)
+
+        if total_items == 0:
+            return [], 0
+
+        total_pages = (total_items + per_page - 1) // per_page
+
+        # Handle out of range
+        if page < 1 or page > total_pages:
+            return [], total_pages
+
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+
+        return items[start_idx:end_idx], total_pages
+
     def get_relative_path(self, full_path: str) -> str:
         """Get relative path from current directory.
 

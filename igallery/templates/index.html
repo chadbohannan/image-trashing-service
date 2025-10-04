@@ -4,35 +4,60 @@
 
 {% block extra_css %}
 <style>
-    .folders {
-        margin-bottom: 30px;
-    }
-
-    .folder-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 15px;
-        margin-top: 15px;
-    }
-
-    .folder-item {
+    .folder-thumbnail {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
         display: flex;
+        flex-direction: column;
         align-items: center;
-        padding: 15px;
-        background-color: #2a2a2a;
-        border-radius: 8px;
-        text-decoration: none;
-        color: #e0e0e0;
-        transition: background-color 0.2s;
-    }
-
-    .folder-item:hover {
-        background-color: #3a3a3a;
+        justify-content: space-between;
+        background-color: #1a1a1a;
+        cursor: pointer;
+        overflow: hidden;
     }
 
     .folder-icon {
-        font-size: 1.5rem;
-        margin-right: 10px;
+        font-size: 4rem;
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .folder-preview {
+        flex: 1;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        padding: 8px;
+    }
+
+    .folder-preview img {
+        width: 85%;
+        height: 85%;
+        object-fit: cover;
+        border: 2px solid #444;
+        border-radius: 4px;
+    }
+
+    .folder-name {
+        width: 100%;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+        background-color: rgba(0, 0, 0, 0.7);
+        color: #e0e0e0;
+        font-size: 0.85rem;
+        text-align: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex-shrink: 0;
+        transform: translateY(-8px);
     }
 
     .thumbnail-grid {
@@ -278,20 +303,7 @@
 {% endblock %}
 
 {% block content %}
-{% if subdirectories %}
-<div class="folders">
-    <div class="folder-grid">
-        {% for subdir in subdirectories %}
-        <a href="/?path={{ (current_path + '/' + subdir) if current_path else subdir }}" class="folder-item">
-            <span class="folder-icon">📁</span>
-            <span>{{ subdir }}</span>
-        </a>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-{% if images %}
+{% if items %}
 <div class="images">
     {% if total_pages > 1 %}
     <div class="pagination">
@@ -304,26 +316,43 @@
     </div>
     {% endif %}
     <div class="thumbnail-grid" id="thumbnail-grid">
-        {% for image in images %}
-        <div class="thumbnail-item" data-image="{{ image }}">
-            <div class="thumbnail-wrapper">
-                <img
-                    src="/thumbnail/{{ image }}?path={{ current_path }}"
-                    alt="{{ image }}"
-                    class="thumbnail-img"
-                >
-            </div>
-            <div class="thumbnail-actions">
-                <span class="thumbnail-name">{{ image }}</span>
-                <button class="trash-btn" onclick="trashImage('{{ image }}', event)">🗑️</button>
-            </div>
-        </div>
+        {% for item in items %}
+            {% if item.type == 'directory' %}
+                <a href="/?path={{ (current_path + '/' + item.name) if current_path else item.name }}" class="thumbnail-item" data-type="directory" title="{{ item.name }}">
+                    <div class="thumbnail-wrapper">
+                        <div class="folder-thumbnail">
+                            {% if item.first_image %}
+                                <div class="folder-preview">
+                                    <img src="/thumbnail/{{ item.first_image }}?path={{ (current_path + '/' + item.name) if current_path else item.name }}" alt="{{ item.name }}">
+                                </div>
+                            {% else %}
+                                <span class="folder-icon">📁</span>
+                            {% endif %}
+                            <span class="folder-name">{{ item.name }}</span>
+                        </div>
+                    </div>
+                </a>
+            {% else %}
+                <div class="thumbnail-item" data-image="{{ item.name }}" data-type="image">
+                    <div class="thumbnail-wrapper">
+                        <img
+                            src="/thumbnail/{{ item.name }}?path={{ current_path }}"
+                            alt="{{ item.name }}"
+                            class="thumbnail-img"
+                        >
+                    </div>
+                    <div class="thumbnail-actions">
+                        <span class="thumbnail-name">{{ item.name }}</span>
+                        <button class="trash-btn" onclick="trashImage('{{ item.name }}', event)">🗑️</button>
+                    </div>
+                </div>
+            {% endif %}
         {% endfor %}
     </div>
 </div>
-{% elif not subdirectories %}
+{% else %}
 <div class="empty-message">
-    <p>No images found in this directory.</p>
+    <p>No items found in this directory.</p>
 </div>
 {% endif %}
 
@@ -388,21 +417,26 @@ let optimalPerPage = {{ per_page }}; // Will be updated on DOMContentLoaded if n
 // Build array of images for lightbox navigation
 let galleryImages = [];
 
-function updateGalleryImages(images) {
+function updateGalleryImages(items) {
     galleryImages.length = 0;
-    images.forEach(img => {
-        galleryImages.push({
-            name: img,
-            url: `/image/${img}?path=${currentPath}`
-        });
+    // Only include images, not directories
+    items.forEach(item => {
+        if (item.type === 'image') {
+            galleryImages.push({
+                name: item.name,
+                url: `/image/${item.name}?path=${currentPath}`
+            });
+        }
     });
     initLightboxThumbnails();
 }
 
-// Initial population
+// Initial population - only include images from items
 updateGalleryImages([
-    {% for image in images %}
-        "{{ image }}"{{ "," if not loop.last else "" }}
+    {% for item in items %}
+        {% if item.type == 'image' %}
+        {type: 'image', name: "{{ item.name }}"}{{ "," if not loop.last else "" }}
+        {% endif %}
     {% endfor %}
 ]);
 
@@ -411,8 +445,9 @@ let preloadedNextImage = null;  // Preloaded next image
 let preloadedPrevImage = null;  // Preloaded previous image
 
 function initLightboxThumbnails() {
-    const thumbnails = document.querySelectorAll('.thumbnail-img');
-    thumbnails.forEach((thumbnail, index) => {
+    // Only attach handlers to image thumbnails, not directories
+    const imageThumbnails = document.querySelectorAll('.thumbnail-item[data-type="image"] .thumbnail-img');
+    imageThumbnails.forEach((thumbnail, index) => {
         thumbnail.onclick = (event) => openLightbox(index, event);
     });
 }
@@ -509,27 +544,54 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
         // Update the main thumbnail grid in the DOM
         const thumbnailGrid = document.getElementById('thumbnail-grid');
         thumbnailGrid.innerHTML = ''; // Clear existing thumbnails
-        data.images.forEach(imgName => {
-            const div = document.createElement('div');
-            div.className = 'thumbnail-item';
-            div.setAttribute('data-image', imgName);
-            div.innerHTML = `
-                <div class="thumbnail-wrapper">
-                    <img
-                        src="/thumbnail/${imgName}?path=${currentPath}"
-                        alt="${imgName}"
-                        class="thumbnail-img"
-                    >
-                </div>
-                <div class="thumbnail-actions">
-                    <span class="thumbnail-name">${imgName}</span>
-                    <button class="trash-btn" onclick="trashImage('${imgName}', event)">🗑️</button>
-                </div>
-            `;
-            thumbnailGrid.appendChild(div);
+        data.items.forEach(item => {
+            if (item.type === 'directory') {
+                // Create directory thumbnail
+                const a = document.createElement('a');
+                a.className = 'thumbnail-item';
+                a.setAttribute('data-type', 'directory');
+                a.setAttribute('title', item.name);
+                a.href = `/?path=${currentPath ? currentPath + '/' + item.name : item.name}`;
+
+                const previewHtml = item.first_image
+                    ? `<div class="folder-preview">
+                        <img src="/thumbnail/${item.first_image}?path=${currentPath ? currentPath + '/' + item.name : item.name}" alt="${item.name}">
+                       </div>`
+                    : `<span class="folder-icon">📁</span>`;
+
+                a.innerHTML = `
+                    <div class="thumbnail-wrapper">
+                        <div class="folder-thumbnail">
+                            ${previewHtml}
+                            <span class="folder-name">${item.name}</span>
+                        </div>
+                    </div>
+                `;
+                thumbnailGrid.appendChild(a);
+            } else {
+                // Create image thumbnail
+                const div = document.createElement('div');
+                div.className = 'thumbnail-item';
+                div.setAttribute('data-image', item.name);
+                div.setAttribute('data-type', 'image');
+                div.innerHTML = `
+                    <div class="thumbnail-wrapper">
+                        <img
+                            src="/thumbnail/${item.name}?path=${currentPath}"
+                            alt="${item.name}"
+                            class="thumbnail-img"
+                        >
+                    </div>
+                    <div class="thumbnail-actions">
+                        <span class="thumbnail-name">${item.name}</span>
+                        <button class="trash-btn" onclick="trashImage('${item.name}', event)">🗑️</button>
+                    </div>
+                `;
+                thumbnailGrid.appendChild(div);
+            }
         });
 
-        updateGalleryImages(data.images); // Update the galleryImages array and re-init event listeners
+        updateGalleryImages(data.items); // Update the galleryImages array and re-init event listeners
         currentPage = data.page;
         totalPages = data.total_pages;
         currentImageIndex = (initialImageIndex === -1) ? galleryImages.length - 1 : initialImageIndex;
@@ -738,36 +800,37 @@ async function fetchReplacementImage() {
         if (data.success) {
             // Find images in server response that we don't have yet
             const currentImageNames = new Set(galleryImages.map(img => img.name));
-            const newImages = data.images.filter(name => !currentImageNames.has(name));
+            const newItems = data.items.filter(item => item.type === 'image' && !currentImageNames.has(item.name));
 
-            if (newImages.length > 0) {
+            if (newItems.length > 0) {
                 const thumbnailGrid = document.getElementById('thumbnail-grid');
 
                 // Add each new image
-                newImages.forEach(newImageName => {
+                newItems.forEach(item => {
                     // Create new thumbnail
                     const div = document.createElement('div');
                     div.className = 'thumbnail-item';
-                    div.setAttribute('data-image', newImageName);
+                    div.setAttribute('data-image', item.name);
+                    div.setAttribute('data-type', 'image');
                     div.innerHTML = `
                         <div class="thumbnail-wrapper">
                             <img
-                                src="/thumbnail/${newImageName}?path=${currentPath}"
-                                alt="${newImageName}"
+                                src="/thumbnail/${item.name}?path=${currentPath}"
+                                alt="${item.name}"
                                 class="thumbnail-img"
                             >
                         </div>
                         <div class="thumbnail-actions">
-                            <span class="thumbnail-name">${newImageName}</span>
-                            <button class="trash-btn" onclick="trashImage('${newImageName}', event)">🗑️</button>
+                            <span class="thumbnail-name">${item.name}</span>
+                            <button class="trash-btn" onclick="trashImage('${item.name}', event)">🗑️</button>
                         </div>
                     `;
                     thumbnailGrid.appendChild(div);
 
                     // Add to galleryImages array
                     galleryImages.push({
-                        name: newImageName,
-                        url: `/image/${newImageName}?path=${currentPath}`
+                        name: item.name,
+                        url: `/image/${item.name}?path=${currentPath}`
                     });
                 });
 
