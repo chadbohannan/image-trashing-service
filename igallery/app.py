@@ -3,8 +3,9 @@
 import io
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
-from flask import Flask, render_template, send_file, request, jsonify, abort
+from flask import Flask, render_template, send_file, request, jsonify, abort, make_response
 
 from igallery.database import Database
 from igallery.thumbnail_service import ThumbnailService
@@ -175,14 +176,36 @@ def create_app(
         if not image_path.exists():
             abort(404)
 
+        # Get image modification time for cache validation
+        image_mtime = os.path.getmtime(str(image_path))
+        last_modified = datetime.fromtimestamp(image_mtime, timezone.utc)
+
+        # Check if client has a cached version
+        if_modified_since = request.headers.get('If-Modified-Since')
+        if if_modified_since:
+            try:
+                # Parse client's cached timestamp
+                client_mtime = datetime.strptime(if_modified_since, '%a, %d %b %Y %H:%M:%S GMT')
+                # If file hasn't been modified, return 304 Not Modified
+                if last_modified <= client_mtime:
+                    return make_response('', 304)
+            except ValueError:
+                pass  # Invalid date format, ignore
+
         # Generate or retrieve thumbnail
         try:
             thumbnail_data = thumbnail_service.get_or_create_thumbnail(str(image_path))
-            return send_file(
+            response = make_response(send_file(
                 io.BytesIO(thumbnail_data),
                 mimetype='image/jpeg',
                 as_attachment=False
-            )
+            ))
+
+            # Set caching headers
+            response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            response.headers['Cache-Control'] = 'public, max-age=31536000'  # Cache for 1 year
+
+            return response
         except Exception as e:
             app.logger.error(f"Error generating thumbnail: {e}")
             abort(500)
@@ -329,14 +352,36 @@ def create_app(
         if not image_path.exists():
             abort(404)
 
+        # Get image modification time for cache validation
+        image_mtime = os.path.getmtime(str(image_path))
+        last_modified = datetime.fromtimestamp(image_mtime, timezone.utc)
+
+        # Check if client has a cached version
+        if_modified_since = request.headers.get('If-Modified-Since')
+        if if_modified_since:
+            try:
+                # Parse client's cached timestamp
+                client_mtime = datetime.strptime(if_modified_since, '%a, %d %b %Y %H:%M:%S GMT')
+                # If file hasn't been modified, return 304 Not Modified
+                if last_modified <= client_mtime:
+                    return make_response('', 304)
+            except ValueError:
+                pass  # Invalid date format, ignore
+
         # Generate or retrieve thumbnail
         try:
             thumbnail_data = thumbnail_service.get_or_create_thumbnail(str(image_path))
-            return send_file(
+            response = make_response(send_file(
                 io.BytesIO(thumbnail_data),
                 mimetype='image/jpeg',
                 as_attachment=False
-            )
+            ))
+
+            # Set caching headers
+            response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
+            response.headers['Cache-Control'] = 'public, max-age=31536000'  # Cache for 1 year
+
+            return response
         except Exception as e:
             app.logger.error(f"Error generating thumbnail: {e}")
             abort(500)
