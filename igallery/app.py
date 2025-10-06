@@ -165,19 +165,16 @@ def create_app(
             has_parent=relative_path != ''
         )
 
-    @app.route('/thumbnail/<path:image_name>')
-    def thumbnail(image_name):
+    @app.route('/thumbnail/<path:image_path>')
+    def thumbnail(image_path):
         """Serve thumbnail for an image."""
-        relative_path = request.args.get('path', '')
-        current_dir = validate_gallery_path(relative_path)
+        full_image_path = validate_gallery_path(image_path)
 
-        image_path = current_dir / image_name
-
-        if not image_path.exists():
+        if not full_image_path.exists():
             abort(404)
 
         # Get image modification time for cache validation
-        image_mtime = os.path.getmtime(str(image_path))
+        image_mtime = os.path.getmtime(str(full_image_path))
         last_modified = datetime.fromtimestamp(image_mtime, timezone.utc)
 
         # Check if client has a cached version
@@ -194,7 +191,7 @@ def create_app(
 
         # Generate or retrieve thumbnail
         try:
-            thumbnail_data = thumbnail_service.get_or_create_thumbnail(str(image_path))
+            thumbnail_data = thumbnail_service.get_or_create_thumbnail(str(full_image_path))
             response = make_response(send_file(
                 io.BytesIO(thumbnail_data),
                 mimetype='image/jpeg',
@@ -203,30 +200,27 @@ def create_app(
 
             # Set caching headers
             response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
-            response.headers['Cache-Control'] = 'public, max-age=31536000'  # Cache for 1 year
+            response.headers['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
 
             return response
         except Exception as e:
             app.logger.error(f"Error generating thumbnail: {e}")
             abort(500)
 
-    @app.route('/image/<path:image_name>')
-    def image(image_name):
+    @app.route('/image/<path:image_path>')
+    def image(image_path):
         """Serve full-size image."""
-        relative_path = request.args.get('path', '')
         preload = request.args.get('preload', 'false') == 'true'
-        current_dir = validate_gallery_path(relative_path)
+        full_image_path = validate_gallery_path(image_path)
 
-        image_path = current_dir / image_name
-
-        if not image_path.exists():
+        if not full_image_path.exists():
             abort(404)
 
         # Record view only if not preloading
         if not preload:
-            db.record_view(str(image_path))
+            db.record_view(str(full_image_path))
 
-        return send_file(str(image_path))
+        return send_file(str(full_image_path))
 
     @app.route('/carousel')
     def carousel():
@@ -267,17 +261,13 @@ def create_app(
         gallery_root_path = Path(gallery_root).resolve()
         relative_to_gallery = selected_path.relative_to(gallery_root_path)
 
-        # Split into directory path and filename
+        # Get filename for display
         image_name = relative_to_gallery.name
-        if relative_to_gallery.parent != Path('.'):
-            relative_dir = str(relative_to_gallery.parent)
-        else:
-            relative_dir = ''
 
         return jsonify({
-            'image_url': f'/image/{image_name}?path={relative_dir}',
+            'image_url': f'/image/{relative_to_gallery}',
             'image_name': image_name,
-            'image_path': relative_dir  # Directory path for trash operation
+            'image_path': str(relative_to_gallery)  # Full relative path for operations
         })
 
     @app.route('/trash', methods=['POST'])
@@ -379,7 +369,7 @@ def create_app(
 
             # Set caching headers
             response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
-            response.headers['Cache-Control'] = 'public, max-age=31536000'  # Cache for 1 year
+            response.headers['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
 
             return response
         except Exception as e:

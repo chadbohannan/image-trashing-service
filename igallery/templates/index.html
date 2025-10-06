@@ -323,7 +323,7 @@
                         <div class="folder-thumbnail">
                             {% if item.first_image %}
                                 <div class="folder-preview">
-                                    <img src="/thumbnail/{{ item.first_image }}?path={{ (current_path + '/' + item.name) if current_path else item.name }}" alt="{{ item.name }}">
+                                    <img src="/thumbnail/{{ (current_path + '/' + item.name + '/' + item.first_image) if current_path else (item.name + '/' + item.first_image) }}" alt="{{ item.name }}">
                                 </div>
                             {% else %}
                                 <span class="folder-icon">📁</span>
@@ -336,7 +336,7 @@
                 <div class="thumbnail-item" data-image="{{ item.name }}" data-type="image">
                     <div class="thumbnail-wrapper">
                         <img
-                            src="/thumbnail/{{ item.name }}?path={{ current_path }}"
+                            src="/thumbnail/{{ (current_path + '/' + item.name) if current_path else item.name }}"
                             alt="{{ item.name }}"
                             class="thumbnail-img"
                         >
@@ -424,7 +424,7 @@ function updateGalleryImages(items) {
         if (item.type === 'image') {
             galleryImages.push({
                 name: item.name,
-                url: `/image/${item.name}?path=${currentPath}`
+                url: `/image/${currentPath ? currentPath + '/' + item.name : item.name}`
             });
         }
     });
@@ -555,7 +555,7 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
 
                 const previewHtml = item.first_image
                     ? `<div class="folder-preview">
-                        <img src="/thumbnail/${item.first_image}?path=${currentPath ? currentPath + '/' + item.name : item.name}" alt="${item.name}">
+                        <img src="/thumbnail/${currentPath ? currentPath + '/' + item.name + '/' + item.first_image : item.name + '/' + item.first_image}" alt="${item.name}">
                        </div>`
                     : `<span class="folder-icon">📁</span>`;
 
@@ -577,7 +577,7 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
                 div.innerHTML = `
                     <div class="thumbnail-wrapper">
                         <img
-                            src="/thumbnail/${item.name}?path=${currentPath}"
+                            src="/thumbnail/${currentPath ? currentPath + '/' + item.name : item.name}"
                             alt="${item.name}"
                             class="thumbnail-img"
                         >
@@ -663,7 +663,8 @@ async function nextImage(event) {
 function recordImageView(imageName) {
     const currentPath = "{{ current_path }}";
     // Silent request to record view
-    fetch(`/image/${imageName}?path=${currentPath}`, {
+    const imagePath = currentPath ? `${currentPath}/${imageName}` : imageName;
+    fetch(`/image/${imagePath}`, {
         method: 'HEAD'
     }).catch(() => {
         // Ignore errors in view tracking
@@ -815,7 +816,7 @@ async function fetchReplacementImage() {
                     div.innerHTML = `
                         <div class="thumbnail-wrapper">
                             <img
-                                src="/thumbnail/${item.name}?path=${currentPath}"
+                                src="/thumbnail/${currentPath ? currentPath + '/' + item.name : item.name}"
                                 alt="${item.name}"
                                 class="thumbnail-img"
                             >
@@ -830,7 +831,7 @@ async function fetchReplacementImage() {
                     // Add to galleryImages array
                     galleryImages.push({
                         name: item.name,
-                        url: `/image/${item.name}?path=${currentPath}`
+                        url: `/image/${currentPath ? currentPath + '/' + item.name : item.name}`
                     });
                 });
 

@@ -47,13 +47,12 @@
         position: fixed;
         bottom: 0;
         left: 0;
-        right: 0;
         background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
         padding: 30px;
         display: flex;
         flex-direction: column;
         gap: 15px;
-        align-items: center;
+        align-items: flex-start;
         z-index: 200;
         opacity: 0;
         transition: opacity 0.3s;
@@ -65,10 +64,9 @@
 
     .control-row {
         display: flex;
+        flex-direction: column-reverse;
         gap: 15px;
-        flex-wrap: wrap;
-        justify-content: center;
-        align-items: center;
+        align-items: flex-start;
     }
 
 
@@ -293,10 +291,9 @@
 
             <div class="autoplay-controls">
                 <label>
-                    Interval:
+                    Interval: <br>
                     <input type="number" id="interval-input" value="3" min="1" max="60" title="Autoplay interval in seconds">
                 </label>
-                <span style="font-size: 12px; color: #888;">sec</span>
             </div>
         </div>
     </div>
@@ -553,9 +550,13 @@ function trashCurrentImage() {
     }
 
     const imageName = currentImageName;
-    const imagePath = currentImagePath || '';
+    const fullImagePath = currentImagePath || '';
 
-    fetch(`/trash?path=${imagePath}`, {
+    // Extract directory path from full image path
+    const lastSlash = fullImagePath.lastIndexOf('/');
+    const dirPath = lastSlash !== -1 ? fullImagePath.substring(0, lastSlash) : '';
+
+    fetch(`/trash?path=${dirPath}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
