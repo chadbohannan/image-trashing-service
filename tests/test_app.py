@@ -51,11 +51,6 @@ def client(app):
 class TestWebRoutes:
     """Test web application routes."""
 
-    def test_index_page(self, client):
-        """Test that index page loads."""
-        response = client.get('/')
-        assert response.status_code == 200
-
     def test_index_shows_images(self, client):
         """Test that index page shows images."""
         response = client.get('/')
@@ -249,3 +244,70 @@ class TestWebRoutes:
         assert response.status_code == 200
         # Should show current path
         assert b'vacation' in response.data
+
+    def test_subdirectory_image_url_structure(self, client, temp_gallery):
+        """Test that subdirectory images use full path in URL."""
+        # Get image from subdirectory
+        response = client.get('/image/vacation/vacation0.jpg')
+        assert response.status_code == 200
+        assert response.content_type.startswith('image/')
+
+    def test_subdirectory_thumbnail_url_structure(self, client, temp_gallery):
+        """Test that subdirectory thumbnails use full path in URL."""
+        # Get thumbnail from subdirectory
+        response = client.get('/thumbnail/vacation/vacation0.jpg')
+        assert response.status_code == 200
+        assert response.content_type.startswith('image/')
+
+    def test_deeply_nested_path_in_url(self, temp_gallery, client):
+        """Test that deeply nested paths work correctly."""
+        # Create a deeply nested structure
+        deep_path = temp_gallery / "level1" / "level2" / "level3"
+        deep_path.mkdir(parents=True)
+        Image.new('RGB', (800, 600), color='purple').save(
+            deep_path / "deep.jpg", 'JPEG'
+        )
+
+        # Access image with full path
+        response = client.get('/image/level1/level2/level3/deep.jpg')
+        assert response.status_code == 200
+
+        # Access thumbnail with full path
+        response = client.get('/thumbnail/level1/level2/level3/deep.jpg')
+        assert response.status_code == 200
+
+    def test_path_traversal_attack_prevention(self, client):
+        """Test that path traversal attacks are blocked."""
+        # Try to access files outside gallery root
+        response = client.get('/image/../../../etc/passwd')
+        assert response.status_code in [400, 403, 404]
+
+        response = client.get('/image/..%2f..%2f..%2fetc%2fpasswd')
+        assert response.status_code in [400, 403, 404]
+
+        response = client.get('/thumbnail/../../../etc/passwd')
+        assert response.status_code in [400, 403, 404]
+
+    def test_path_traversal_with_encoded_characters(self, client):
+        """Test that encoded path traversal attempts are blocked."""
+        # Try various encoding schemes
+        test_paths = [
+            '/image/..%252f..%252fetc%252fpasswd',
+            '/image/%2e%2e%2f%2e%2e%2fetc%2fpasswd',
+            '/thumbnail/..%5c..%5cetc%5cpasswd',
+        ]
+
+        for path in test_paths:
+            response = client.get(path)
+            assert response.status_code in [400, 403, 404]
+
+    def test_carousel_with_subdirectory_context(self, client):
+        """Test that carousel respects subdirectory context."""
+        # Request carousel from vacation subdirectory
+        response = client.get('/carousel/next?path=vacation')
+        assert response.status_code == 200
+
+        data = json.loads(response.data)
+        assert 'image_url' in data
+        # Image URL should contain the subdirectory path
+        assert 'vacation' in data['image_url']
