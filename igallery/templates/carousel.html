@@ -581,40 +581,76 @@ function trashCurrentImage() {
                 loadImageFromHistory(imageHistory[historyIndex]);
             } else {
                 // We deleted while at the end (forward navigation) or history is empty
-                // Fetch a new image to continue forward
-                const loading = document.getElementById('loading');
-                const image = document.getElementById('carousel-image');
+                // Check if we have a preloaded image ready (for fast loading)
+                if (preloadedImage) {
+                    const loading = document.getElementById('loading');
+                    const image = document.getElementById('carousel-image');
 
-                loading.classList.remove('hidden');
-                image.classList.add('hidden');
+                    currentImageName = preloadedImage.name;
+                    currentImagePath = preloadedImage.path;
 
-                fetch(`/carousel/next?path=${currentPath}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            showToast(data.error, 'error');
+                    // Use the actual URL (without preload flag) for display and history
+                    const displayUrl = preloadedImage.actualUrl || preloadedImage.url;
+
+                    // Add to history
+                    const imageData = {
+                        name: preloadedImage.name,
+                        path: preloadedImage.path,
+                        url: displayUrl
+                    };
+
+                    imageHistory.push(imageData);
+                    historyIndex = imageHistory.length - 1;
+
+                    // Record view on server
+                    fetch(displayUrl, { method: 'HEAD' }).catch(() => {});
+
+                    // Directly use the preloaded image element - it's already loaded!
+                    image.src = preloadedImage.img.src;
+                    loading.classList.add('hidden');
+                    image.classList.remove('hidden');
+
+                    // Clear the preloaded image
+                    preloadedImage = null;
+
+                    // Preload the next image
+                    preloadNextImage();
+                } else {
+                    // No preloaded image, fetch a new image
+                    const loading = document.getElementById('loading');
+                    const image = document.getElementById('carousel-image');
+
+                    loading.classList.remove('hidden');
+                    image.classList.add('hidden');
+
+                    fetch(`/carousel/next?path=${currentPath}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                showToast(data.error, 'error');
+                                loading.classList.add('hidden');
+                                return;
+                            }
+
+                            currentImageName = data.image_name;
+                            currentImagePath = data.image_path;
+
+                            const imageData = {
+                                name: data.image_name,
+                                path: data.image_path,
+                                url: data.image_url
+                            };
+
+                            imageHistory.push(imageData);
+                            historyIndex = imageHistory.length - 1;
+
+                            displayImage(data.image_url, data.image_name);
+                        })
+                        .catch(error => {
+                            showToast('Error loading next image: ' + error.message, 'error');
                             loading.classList.add('hidden');
-                            return;
-                        }
-
-                        currentImageName = data.image_name;
-                        currentImagePath = data.image_path;
-
-                        const imageData = {
-                            name: data.image_name,
-                            path: data.image_path,
-                            url: data.image_url
-                        };
-
-                        imageHistory.push(imageData);
-                        historyIndex = imageHistory.length - 1;
-
-                        displayImage(data.image_url, data.image_name);
-                    })
-                    .catch(error => {
-                        showToast('Error loading next image: ' + error.message, 'error');
-                        loading.classList.add('hidden');
-                    });
+                        });
+                }
             }
         } else {
             showToast('Error moving image to trash: ' + (data.error || 'Unknown error'), 'error');

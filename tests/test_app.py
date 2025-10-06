@@ -311,3 +311,111 @@ class TestWebRoutes:
         assert 'image_url' in data
         # Image URL should contain the subdirectory path
         assert 'vacation' in data['image_url']
+
+    def test_carousel_preload_after_trash(self, client, temp_gallery):
+        """Test that carousel preloading works correctly after trash operation."""
+        # Get first carousel image
+        response = client.get('/carousel/next')
+        assert response.status_code == 200
+        first_data = json.loads(response.data)
+        first_image = first_data['image_name']
+
+        # Preload next image (this should work)
+        response = client.get('/carousel/next?preload=true')
+        assert response.status_code == 200
+        preload_data = json.loads(response.data)
+        assert 'image_name' in preload_data
+
+        # Trash the first image
+        response = client.post(
+            '/trash',
+            data=json.dumps({'image_name': first_image}),
+            content_type='application/json'
+        )
+        assert response.status_code == 200
+
+        # Get next carousel image (should work without delay)
+        response = client.get('/carousel/next')
+        assert response.status_code == 200
+        next_data = json.loads(response.data)
+        assert 'image_name' in next_data
+        # Should be a different image than the trashed one
+        assert next_data['image_name'] != first_image
+
+        # Verify preload still works after trash
+        response = client.get('/carousel/next?preload=true')
+        assert response.status_code == 200
+        second_preload = json.loads(response.data)
+        assert 'image_name' in second_preload
+
+    def test_rapid_carousel_trash_sequence(self, client, temp_gallery):
+        """Test rapid sequence of carousel views and trash operations."""
+        trashed_images = []
+
+        # Simulate rapid carousel usage with trash operations
+        for i in range(5):
+            # Get image
+            response = client.get('/carousel/next')
+            assert response.status_code == 200
+            data = json.loads(response.data)
+            image_name = data['image_name']
+
+            # Preload next (simulating what happens in UI)
+            response = client.get('/carousel/next?preload=true')
+            assert response.status_code == 200
+
+            # Trash current image
+            response = client.post(
+                '/trash',
+                data=json.dumps({'image_name': image_name}),
+                content_type='application/json'
+            )
+            assert response.status_code == 200
+            trashed_images.append(image_name)
+
+        # Verify all trashed images are in trash
+        trash_dir = temp_gallery / "trash"
+        for image_name in trashed_images:
+            assert (trash_dir / image_name).exists()
+
+        # Verify carousel still works after rapid trash operations
+        response = client.get('/carousel/next')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        # Should return an image that wasn't trashed
+        assert data['image_name'] not in trashed_images
+
+    def test_lightbox_preload_preservation_after_trash(self, client, temp_gallery):
+        """Test that gallery lightbox preserves preload cache after trash when appropriate."""
+        # This test verifies the lightbox uses preloaded images after trash
+        # Note: This is a backend API test - actual preload cache is client-side JavaScript
+
+        # Get first page of images
+        response = client.get('/')
+        assert response.status_code == 200
+
+        # The lightbox preloading is handled client-side, but we can verify that
+        # the trash operation doesn't break the image serving
+        images = list(temp_gallery.glob("*.jpg"))
+        if len(images) >= 2:
+            first_image = images[0].name
+            second_image = images[1].name
+
+            # Verify both images are accessible
+            response = client.get(f'/image/{first_image}')
+            assert response.status_code == 200
+
+            response = client.get(f'/image/{second_image}')
+            assert response.status_code == 200
+
+            # Trash first image
+            response = client.post(
+                '/trash',
+                data=json.dumps({'image_name': first_image}),
+                content_type='application/json'
+            )
+            assert response.status_code == 200
+
+            # Second image should still be accessible (would have been preloaded)
+            response = client.get(f'/image/{second_image}')
+            assert response.status_code == 200

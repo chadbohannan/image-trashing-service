@@ -751,6 +751,9 @@ async function trashImage(imageName, event, fromLightbox = false) {
                 // If we deleted the last image and got a replacement, stay at that index
                 if (wasAtEnd && gotReplacement) {
                     // currentImageIndex stays the same (now points to replacement at end)
+                    // Clear preload cache as we have a new image at this position
+                    preloadedNextImage = null;
+                    preloadedPrevImage = null;
                     updateLightboxImage();
                     recordImageView(galleryImages[currentImageIndex].name);
                 }
@@ -761,6 +764,15 @@ async function trashImage(imageName, event, fromLightbox = false) {
                     if (galleryImages.length > 0) {
                         // Still have images on current page, go to the new last image
                         currentImageIndex = galleryImages.length - 1;
+                        // Check if we have the previous image preloaded (it's now at the new position)
+                        if (preloadedPrevImage && preloadedPrevImage.index === currentImageIndex) {
+                            // Keep it, it's the right image
+                            preloadedNextImage = null;  // Clear next as it's no longer valid
+                        } else {
+                            // Clear both as we moved to a different position
+                            preloadedNextImage = null;
+                            preloadedPrevImage = null;
+                        }
                         updateLightboxImage();
                         recordImageView(galleryImages[currentImageIndex].name);
                     } else if (currentPage > 1) {
@@ -777,9 +789,17 @@ async function trashImage(imageName, event, fromLightbox = false) {
                     if (currentImageIndex >= galleryImages.length) {
                         currentImageIndex = galleryImages.length - 1;
                     }
-                    // Clear preload cache since indices changed
-                    preloadedNextImage = null;
+                    // Adjust preload cache: if we had preloaded next image (at old index+1),
+                    // it's now at current index after deletion
+                    if (preloadedNextImage && preloadedNextImage.index === index + 1) {
+                        preloadedNextImage.index = index;
+                    } else {
+                        // If preloadedNextImage wasn't for the next image, clear it
+                        preloadedNextImage = null;
+                    }
+                    // Previous image preload is no longer valid (indices shifted)
                     preloadedPrevImage = null;
+
                     updateLightboxImage();
                     recordImageView(galleryImages[currentImageIndex].name);
                 }
