@@ -376,6 +376,17 @@ def create_app(
             app.logger.error(f"Error generating thumbnail: {e}")
             abort(500)
 
+    @app.route('/trash/image/<path:relative_path>')
+    def trash_image(relative_path):
+        """Serve full-size trashed image."""
+        trash_dir = Path(gallery_root) / "trash"
+        image_path = trash_dir / relative_path
+
+        if not image_path.exists():
+            abort(404)
+
+        return send_file(str(image_path))
+
     @app.route('/trash/restore', methods=['POST'])
     def restore_from_trash():
         """Restore an image from trash to its original location."""

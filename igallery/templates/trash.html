@@ -63,6 +63,7 @@
         overflow: hidden;
         transition: transform 0.2s;
         border: 2px solid #dc3545;
+        cursor: pointer;
     }
 
     .thumbnail-item:hover {
@@ -83,47 +84,6 @@
         width: 100%;
         height: 100%;
         object-fit: contain;
-    }
-
-    .thumbnail-info {
-        padding: 10px;
-        background-color: #2a2a2a;
-    }
-
-    .thumbnail-name {
-        font-size: 0.85rem;
-        color: #e0e0e0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        margin-bottom: 8px;
-    }
-
-    .thumbnail-actions {
-        display: flex;
-        gap: 8px;
-        margin-top: 8px;
-    }
-
-    .restore-btn {
-        flex: 1;
-        background-color: #28a745;
-        color: white;
-        border: none;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        transition: background-color 0.2s;
-    }
-
-    .restore-btn:hover {
-        background-color: #218838;
-    }
-
-    .restore-btn:disabled {
-        background-color: #555;
-        cursor: not-allowed;
     }
 
     .toast {
@@ -167,6 +127,113 @@
         font-size: 0.85rem;
         margin-left: 10px;
     }
+
+    .lightbox {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.95);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .lightbox.active {
+        display: flex;
+    }
+
+    .lightbox img {
+        max-width: 85%;
+        max-height: 85%;
+        object-fit: contain;
+    }
+
+    .lightbox-close {
+        position: absolute;
+        top: 20px;
+        right: 30px;
+        color: white;
+        font-size: 40px;
+        cursor: pointer;
+        z-index: 1001;
+    }
+
+    .lightbox-close:hover {
+        color: #4a9eff;
+    }
+
+    .lightbox-restore {
+        position: absolute;
+        bottom: 20px;
+        right: 15px;
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        z-index: 1001;
+        background-color: transparent;
+        padding: 8px 16px;
+        border-radius: 8px;
+        transition: opacity 0.2s;
+    }
+
+    .lightbox-restore:hover {
+        opacity: 0.7;
+    }
+
+    .lightbox-nav {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        color: white;
+        font-size: 48px;
+        cursor: pointer;
+        padding: 20px;
+        user-select: none;
+        z-index: 1001;
+        transition: color 0.2s, opacity 0.2s;
+    }
+
+    .lightbox-nav:hover {
+        color: #4a9eff;
+    }
+
+    .lightbox-nav.disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+    }
+
+    .lightbox-nav.disabled:hover {
+        color: white;
+    }
+
+    .lightbox-prev {
+        left: 30px;
+    }
+
+    .lightbox-next {
+        right: 30px;
+    }
+
+    .lightbox-filename {
+        position: absolute;
+        top: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        font-size: 18px;
+        background-color: rgba(0, 0, 0, 0.6);
+        padding: 8px 16px;
+        border-radius: 8px;
+        z-index: 1001;
+        max-width: 80%;
+        text-align: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
 </style>
 {% endblock %}
 
@@ -197,19 +264,13 @@
 {% if images %}
 <div class="thumbnail-grid">
     {% for image in images %}
-    <div class="thumbnail-item" data-trash-path="{{ image.path }}">
+    <div class="thumbnail-item" data-trash-path="{{ image.path }}" data-original-path="{{ image.original }}">
         <div class="thumbnail-wrapper">
             <img
                 src="/trash/thumbnail/{{ image.path }}"
                 alt="{{ image.path }}"
                 class="thumbnail-img"
             >
-        </div>
-        <div class="thumbnail-info">
-            <div class="thumbnail-name" title="Original: {{ image.original }}">{{ image.path }}</div>
-            <div class="thumbnail-actions">
-                <button class="restore-btn" onclick="restoreImage('{{ image.path }}', event)">↶ Restore</button>
-            </div>
         </div>
     </div>
     {% endfor %}
@@ -222,30 +283,108 @@
     </p>
 </div>
 {% endif %}
+
+<div id="lightbox" class="lightbox">
+    <span class="lightbox-close" onclick="closeLightbox()">×</span>
+    <span class="lightbox-restore" onclick="restoreCurrentLightboxImage()" title="Restore image">↶</span>
+    <span class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="prevImage()">‹</span>
+    <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+    <span class="lightbox-nav lightbox-next" id="lightbox-next" onclick="nextImage()">›</span>
+    <div class="lightbox-filename" id="lightbox-filename"></div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
 let currentImageCount = {{ image_count }};
 
-function updateDeleteButton() {
-    const btn = document.getElementById('delete-all-btn');
-    if (btn) {
-        if (currentImageCount === 0) {
-            btn.style.display = 'none';
-        } else {
-            btn.textContent = `Delete ${currentImageCount} Image${currentImageCount !== 1 ? 's' : ''}`;
-        }
+// Build array of trash images for lightbox navigation
+let trashImages = [];
+let currentImageIndex = 0;
+
+function updateTrashImages() {
+    trashImages = [];
+    const thumbnails = document.querySelectorAll('.thumbnail-item');
+    thumbnails.forEach((item, index) => {
+        trashImages.push({
+            trashPath: item.dataset.trashPath,
+            originalPath: item.dataset.originalPath,
+            thumbnailUrl: `/trash/thumbnail/${item.dataset.trashPath}`,
+            imageUrl: `/trash/image/${item.dataset.trashPath}`
+        });
+    });
+    initLightboxThumbnails();
+}
+
+function initLightboxThumbnails() {
+    const thumbnails = document.querySelectorAll('.thumbnail-item');
+    thumbnails.forEach((thumbnail, index) => {
+        thumbnail.onclick = () => openLightbox(index);
+    });
+}
+
+function openLightbox(index) {
+    if (trashImages.length === 0) return;
+
+    currentImageIndex = index;
+    updateLightboxImage();
+
+    const lightbox = document.getElementById('lightbox');
+    lightbox.classList.add('active');
+}
+
+function closeLightbox() {
+    const lightbox = document.getElementById('lightbox');
+    lightbox.classList.remove('active');
+}
+
+function updateLightboxImage() {
+    const img = document.getElementById('lightbox-img');
+    const filename = document.getElementById('lightbox-filename');
+    const prevBtn = document.getElementById('lightbox-prev');
+    const nextBtn = document.getElementById('lightbox-next');
+
+    const currentImage = trashImages[currentImageIndex];
+
+    img.src = currentImage.imageUrl;
+    filename.textContent = currentImage.trashPath;
+
+    // Update button states
+    if (currentImageIndex === 0) {
+        prevBtn.classList.add('disabled');
+    } else {
+        prevBtn.classList.remove('disabled');
+    }
+
+    if (currentImageIndex === trashImages.length - 1) {
+        nextBtn.classList.add('disabled');
+    } else {
+        nextBtn.classList.remove('disabled');
     }
 }
 
-function restoreImage(trashPath, event) {
-    event.stopPropagation();
+function prevImage() {
+    if (currentImageIndex > 0) {
+        currentImageIndex--;
+        updateLightboxImage();
+    }
+}
 
-    const btn = event.target;
-    btn.disabled = true;
-    btn.textContent = 'Restoring...';
+function nextImage() {
+    if (currentImageIndex < trashImages.length - 1) {
+        currentImageIndex++;
+        updateLightboxImage();
+    }
+}
 
+function restoreCurrentLightboxImage() {
+    if (trashImages.length === 0) return;
+
+    const currentImage = trashImages[currentImageIndex];
+    restoreImage(currentImage.trashPath, true);
+}
+
+function restoreImage(trashPath, fromLightbox = false) {
     fetch('/trash/restore', {
         method: 'POST',
         headers: {
@@ -262,26 +401,59 @@ function restoreImage(trashPath, event) {
                 item.remove();
             }
 
+            // Find index and remove from array
+            const index = trashImages.findIndex(img => img.trashPath === trashPath);
+            if (index !== -1) {
+                trashImages.splice(index, 1);
+            }
+
+            // Re-initialize click handlers
+            initLightboxThumbnails();
+
             // Decrement count and update button
             currentImageCount--;
             updateDeleteButton();
 
-            // Check if page is now empty
-            const remainingItems = document.querySelectorAll('.thumbnail-item');
-            if (remainingItems.length === 0) {
-                location.reload();
+            // Handle lightbox navigation after restore
+            if (fromLightbox) {
+                if (trashImages.length === 0) {
+                    // No more images, close lightbox and reload
+                    closeLightbox();
+                    location.reload();
+                    return;
+                }
+
+                // Adjust index if needed
+                if (currentImageIndex >= trashImages.length) {
+                    currentImageIndex = trashImages.length - 1;
+                }
+
+                updateLightboxImage();
+            } else {
+                // Check if page is now empty
+                const remainingItems = document.querySelectorAll('.thumbnail-item');
+                if (remainingItems.length === 0) {
+                    location.reload();
+                }
             }
         } else {
             showToast('Error restoring image: ' + (data.error || 'Unknown error'), 'error');
-            btn.disabled = false;
-            btn.textContent = '↶ Restore';
         }
     })
     .catch(error => {
         showToast('Error: ' + error, 'error');
-        btn.disabled = false;
-        btn.textContent = '↶ Restore';
     });
+}
+
+function updateDeleteButton() {
+    const btn = document.getElementById('delete-all-btn');
+    if (btn) {
+        if (currentImageCount === 0) {
+            btn.style.display = 'none';
+        } else {
+            btn.textContent = `Delete ${currentImageCount} Image${currentImageCount !== 1 ? 's' : ''}`;
+        }
+    }
 }
 
 function deleteAllTrash() {
@@ -372,22 +544,51 @@ function showToast(message, type = 'success') {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
-    // ESC navigates back to gallery root
+    const lightbox = document.getElementById('lightbox');
+    const lightboxActive = lightbox.classList.contains('active');
+
+    // Handle ESC key
     if (e.key === 'Escape') {
         e.preventDefault();
-        window.location.href = '/';
+        if (lightboxActive) {
+            // Close lightbox
+            closeLightbox();
+        } else {
+            // Navigate back to gallery root
+            window.location.href = '/';
+        }
         return;
     }
 
-    // Delete/Backspace triggers delete all
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault(); // Prevent browser back navigation
+    // Other keys only work when lightbox is active
+    if (!lightboxActive) {
+        // Delete/Backspace triggers delete all when not in lightbox
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault(); // Prevent browser back navigation
 
-        const deleteAllBtn = document.getElementById('delete-all-btn');
-        if (deleteAllBtn && !deleteAllBtn.disabled) {
-            deleteAllTrash();
+            const deleteAllBtn = document.getElementById('delete-all-btn');
+            if (deleteAllBtn && !deleteAllBtn.disabled) {
+                deleteAllTrash();
+            }
         }
+        return;
+    }
+
+    // Lightbox-specific keyboard shortcuts
+    switch(e.key) {
+        case 'ArrowLeft':
+            e.preventDefault();
+            prevImage();
+            break;
+        case 'ArrowRight':
+        case ' ':
+            e.preventDefault(); // Prevent space from scrolling
+            nextImage();
+            break;
     }
 });
+
+// Initialize trash images array on page load
+updateTrashImages();
 </script>
 {% endblock %}

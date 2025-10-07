@@ -927,9 +927,35 @@ document.addEventListener('keydown', function(e) {
         return;
     }
 
-    // Other keys only work when lightbox is active
-    if (!lightboxActive) return;
+    // Handle keys in gallery view (lightbox not active)
+    if (!lightboxActive) {
+        switch(e.key) {
+            case 'ArrowLeft':
+                // Navigate to previous page
+                if (currentPage > 1) {
+                    e.preventDefault();
+                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}`;
+                }
+                break;
+            case 'ArrowRight':
+                // Navigate to next page
+                if (currentPage < totalPages) {
+                    e.preventDefault();
+                    window.location.href = `/?path=${currentPath}&page=${currentPage + 1}&per_page=${optimalPerPage || 20}`;
+                }
+                break;
+            case 'Enter':
+                // Open first image in lightbox
+                if (galleryImages.length > 0) {
+                    e.preventDefault();
+                    openLightbox(0);
+                }
+                break;
+        }
+        return;
+    }
 
+    // Handle keys in lightbox view
     switch(e.key) {
         case 'ArrowLeft':
             prevImage();
