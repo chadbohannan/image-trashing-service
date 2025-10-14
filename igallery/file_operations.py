@@ -173,22 +173,30 @@ class FileOperations:
             # Get first image in subdirectory (non-recursive)
             subdir_path = self.current_dir / subdir
             first_image = None
+            item_count = 0
             try:
                 # Get all images and sort to ensure consistent ordering
                 images_in_subdir = []
+                subdirs_in_subdir = []
                 for entry in subdir_path.iterdir():
                     if entry.is_file() and ThumbnailService.is_image_file(str(entry)):
                         images_in_subdir.append(entry.name)
+                    elif entry.is_dir() and not entry.name.startswith('.') and entry.name != 'trash':
+                        subdirs_in_subdir.append(entry.name)
 
                 if images_in_subdir:
                     first_image = sorted(images_in_subdir)[0]
+
+                # Count total items (subfolders + images)
+                item_count = len(images_in_subdir) + len(subdirs_in_subdir)
             except PermissionError:
                 pass
 
             items.append({
                 'type': 'directory',
                 'name': subdir,
-                'first_image': first_image
+                'first_image': first_image,
+                'item_count': item_count
             })
         for image_path in images:
             items.append({

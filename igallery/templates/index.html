@@ -60,6 +60,25 @@
         transform: translateY(-8px);
     }
 
+    .folder-item-count {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        min-width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(0, 0, 0, 0.75);
+        color: #e0e0e0;
+        font-size: 0.95rem;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 6px;
+        z-index: 10;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
     .thumbnail-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
@@ -329,6 +348,9 @@
                                 <span class="folder-icon">📁</span>
                             {% endif %}
                             <span class="folder-name">{{ item.name }}</span>
+                            {% if item.item_count is defined and item.item_count > 0 %}
+                                <span class="folder-item-count">{{ item.item_count }}</span>
+                            {% endif %}
                         </div>
                     </div>
                 </a>
@@ -559,11 +581,16 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
                        </div>`
                     : `<span class="folder-icon">📁</span>`;
 
+                const itemCountHtml = item.item_count && item.item_count > 0
+                    ? `<span class="folder-item-count">${item.item_count}</span>`
+                    : '';
+
                 a.innerHTML = `
                     <div class="thumbnail-wrapper">
                         <div class="folder-thumbnail">
                             ${previewHtml}
                             <span class="folder-name">${item.name}</span>
+                            ${itemCountHtml}
                         </div>
                     </div>
                 `;
