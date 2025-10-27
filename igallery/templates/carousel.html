@@ -300,7 +300,7 @@
 
     <!-- Keyboard shortcuts hint -->
     <div class="shortcuts-hint" id="shortcuts-hint">
-        Space/→: Next • ←: Prev • P: Play/Pause • Backspace: Trash • Esc: Close
+        Space/→/Scroll↓: Next • ←/Scroll↑: Prev • P: Play/Pause • Backspace: Trash • Esc: Close
     </div>
 </div>
 {% endblock %}
@@ -745,6 +745,10 @@ document.getElementById('interval-input').addEventListener('change', function() 
 let controlsTimeout;
 let lastMouseMove = 0;
 
+// Wheel event throttling
+let lastWheelTime = 0;
+const WHEEL_THROTTLE_MS = 700; // Minimum time between wheel navigations
+
 function showControls() {
     const controls = document.getElementById('controls');
     const navPrev = document.getElementById('nav-prev');
@@ -780,6 +784,29 @@ document.addEventListener('mousemove', function() {
         lastMouseMove = now;
     }
 });
+
+// Mouse wheel navigation (throttled)
+document.addEventListener('wheel', function(e) {
+    const now = Date.now();
+
+    // Throttle: only allow navigation if enough time has passed
+    if (now - lastWheelTime < WHEEL_THROTTLE_MS) {
+        return; // Ignore this wheel event
+    }
+
+    // Prevent default scrolling behavior
+    e.preventDefault();
+
+    // Update last wheel time
+    lastWheelTime = now;
+
+    // Determine direction: positive deltaY = scroll down = next
+    if (e.deltaY > 0) {
+        nextImage();
+    } else if (e.deltaY < 0) {
+        prevImage();
+    }
+}, { passive: false }); // passive: false allows preventDefault()
 
 // Note: We don't automatically show controls on ALL keydown events
 // Individual key handlers decide whether to show controls

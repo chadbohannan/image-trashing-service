@@ -466,6 +466,10 @@ let currentImageIndex = 0;
 let preloadedNextImage = null;  // Preloaded next image
 let preloadedPrevImage = null;  // Preloaded previous image
 
+// Wheel event throttling
+let lastWheelTime = 0;
+const WHEEL_THROTTLE_MS = 700; // Minimum time between wheel navigations
+
 function initLightboxThumbnails() {
     // Only attach handlers to image thumbnails, not directories
     const imageThumbnails = document.querySelectorAll('.thumbnail-item[data-type="image"] .thumbnail-img');
@@ -1002,5 +1006,36 @@ document.addEventListener('keydown', function(e) {
             break;
     }
 });
+
+// Mouse wheel navigation for lightbox (throttled)
+document.addEventListener('wheel', function(e) {
+    const lightbox = document.getElementById('lightbox');
+    const lightboxActive = lightbox.classList.contains('active');
+
+    // Only handle wheel events when lightbox is active
+    if (!lightboxActive) {
+        return;
+    }
+
+    const now = Date.now();
+
+    // Throttle: only allow navigation if enough time has passed
+    if (now - lastWheelTime < WHEEL_THROTTLE_MS) {
+        return; // Ignore this wheel event
+    }
+
+    // Prevent default scrolling behavior
+    e.preventDefault();
+
+    // Update last wheel time
+    lastWheelTime = now;
+
+    // Determine direction: positive deltaY = scroll down = next
+    if (e.deltaY > 0) {
+        nextImage();
+    } else if (e.deltaY < 0) {
+        prevImage();
+    }
+}, { passive: false }); // passive: false allows preventDefault()
 </script>
 {% endblock %}
