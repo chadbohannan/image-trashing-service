@@ -794,16 +794,18 @@ document.addEventListener('wheel', function(e) {
         return; // Ignore this wheel event
     }
 
-    // Prevent default scrolling behavior
-    e.preventDefault();
-
-    // Update last wheel time
-    lastWheelTime = now;
-
     // Determine direction: positive deltaY = scroll down = next
     if (e.deltaY > 0) {
+        // Prevent default scrolling behavior
+        e.preventDefault();
+        // Update last wheel time only after confirming valid direction
+        lastWheelTime = now;
         nextImage();
     } else if (e.deltaY < 0) {
+        // Prevent default scrolling behavior
+        e.preventDefault();
+        // Update last wheel time only after confirming valid direction
+        lastWheelTime = now;
         prevImage();
     }
 }, { passive: false }); // passive: false allows preventDefault()
