@@ -747,7 +747,8 @@ let lastMouseMove = 0;
 
 // Wheel event throttling
 let lastWheelTime = 0;
-const WHEEL_THROTTLE_MS = 700; // Minimum time between wheel navigations
+let lastWheelDirection = 0; // Track last scroll direction: 1 for down, -1 for up
+const WHEEL_THROTTLE_MS = 300; // Minimum time between wheel navigations
 
 function showControls() {
     const controls = document.getElementById('controls');
@@ -789,23 +790,32 @@ document.addEventListener('mousemove', function() {
 document.addEventListener('wheel', function(e) {
     const now = Date.now();
 
-    // Throttle: only allow navigation if enough time has passed
-    if (now - lastWheelTime < WHEEL_THROTTLE_MS) {
-        return; // Ignore this wheel event
+    // Determine direction: positive deltaY = scroll down = next
+    let currentDirection = 0;
+    if (e.deltaY > 0) {
+        currentDirection = 1;
+    } else if (e.deltaY < 0) {
+        currentDirection = -1;
+    } else {
+        return; // Ignore zero deltaY events
     }
 
-    // Determine direction: positive deltaY = scroll down = next
-    if (e.deltaY > 0) {
-        // Prevent default scrolling behavior
-        e.preventDefault();
-        // Update last wheel time only after confirming valid direction
-        lastWheelTime = now;
+    // Allow immediate navigation if direction changed, otherwise throttle
+    const directionChanged = (lastWheelDirection !== 0 && currentDirection !== lastWheelDirection);
+    if (!directionChanged && now - lastWheelTime < WHEEL_THROTTLE_MS) {
+        return; // Throttle same-direction events
+    }
+
+    // Prevent default scrolling behavior
+    e.preventDefault();
+
+    // Update last wheel time and direction
+    lastWheelTime = now;
+    lastWheelDirection = currentDirection;
+
+    if (currentDirection > 0) {
         nextImage();
-    } else if (e.deltaY < 0) {
-        // Prevent default scrolling behavior
-        e.preventDefault();
-        // Update last wheel time only after confirming valid direction
-        lastWheelTime = now;
+    } else {
         prevImage();
     }
 }, { passive: false }); // passive: false allows preventDefault()
