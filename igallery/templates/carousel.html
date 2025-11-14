@@ -45,91 +45,67 @@
     /* Bottom controls */
     .carousel-controls {
         position: fixed;
-        bottom: 0;
-        left: 0;
-        background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
-        padding: 30px;
+        bottom: 20px;
+        left: 30px;
         display: flex;
-        flex-direction: column;
-        gap: 15px;
-        align-items: flex-start;
-        z-index: 200;
+        align-items: center;
+        gap: 12px;
+        z-index: 300;
         opacity: 0;
         transition: opacity 0.3s;
     }
 
     .carousel-controls.controls-visible {
-        opacity: 1;
+        opacity: 0.7;
     }
 
-    .control-row {
-        display: flex;
-        flex-direction: column-reverse;
-        gap: 15px;
-        align-items: flex-start;
+    .carousel-play-btn {
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        transition: color 0.2s, opacity 0.3s;
+        line-height: 1;
+        user-select: none;
     }
 
+    .carousel-play-btn:hover {
+        color: #4a9eff;
+        opacity: 1 !important;
+    }
 
-    .autoplay-controls {
+    .carousel-play-btn.playing {
+        color: #28a745;
+    }
+
+    .interval-control {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 10px 15px;
+        gap: 4px;
+        color: white;
+        font-size: 16px;
+    }
+
+    .interval-control input[type="number"] {
+        width: 45px;
+        padding: 4px 6px;
         background-color: rgba(42, 42, 42, 0.95);
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .autoplay-controls label {
-        font-size: 14px;
-        color: #e0e0e0;
-        white-space: nowrap;
-    }
-
-    .autoplay-controls input[type="number"] {
-        width: 50px;
-        padding: 5px 8px;
-        background-color: rgba(26, 26, 26, 0.8);
         border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 4px;
         color: #e0e0e0;
         text-align: center;
+        font-size: 16px;
+        transition: border-color 0.2s;
+    }
+
+    .interval-control input[type="number"]:hover,
+    .interval-control input[type="number"]:focus {
+        border-color: #4a9eff;
+        outline: none;
+    }
+
+    .interval-control .unit {
+        color: #888;
         font-size: 14px;
-    }
-
-    .control-btn {
-        padding: 10px 20px;
-        background-color: rgba(42, 42, 42, 0.95);
-        color: #e0e0e0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 14px;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .control-btn:hover {
-        background-color: rgba(74, 158, 255, 0.9);
-        transform: translateY(-2px);
-    }
-
-    .control-btn.play {
-        background-color: rgba(74, 158, 255, 0.95);
-    }
-
-    .control-btn.play.playing {
-        background-color: rgba(40, 167, 69, 0.95);
-    }
-
-    .control-btn.trash {
-        background-color: rgba(220, 53, 69, 0.95);
-    }
-
-    .control-btn.trash:hover {
-        background-color: rgba(200, 35, 51, 0.95);
     }
 
     /* Navigation arrows */
@@ -306,18 +282,10 @@
 
     <!-- Bottom controls -->
     <div class="carousel-controls" id="controls">
-        <div class="control-row">
-            <button class="control-btn play" id="play-btn" onclick="toggleAutoplay()" title="Play/Pause (P)">
-                <span id="play-icon">▶</span>
-                <span id="play-text">Play</span>
-            </button>
-
-            <div class="autoplay-controls">
-                <label>
-                    Interval: <br>
-                    <input type="number" id="interval-input" value="3" min="1" max="60" title="Autoplay interval in seconds">
-                </label>
-            </div>
+        <span class="carousel-play-btn" id="play-btn" onclick="toggleAutoplay()" title="Play/Pause (P)">▶</span>
+        <div class="interval-control">
+            <input type="number" id="interval-input" value="3" min="1" max="60" title="Autoplay interval in seconds">
+            <span class="unit">s</span>
         </div>
     </div>
 
@@ -538,12 +506,9 @@ function startAutoplay() {
 
     // Update UI
     const playBtn = document.getElementById('play-btn');
-    const playIcon = document.getElementById('play-icon');
-    const playText = document.getElementById('play-text');
-
     playBtn.classList.add('playing');
-    playIcon.textContent = '⏸';
-    playText.textContent = 'Pause';
+    playBtn.textContent = '⏸';
+    playBtn.title = 'Pause (P)';
 }
 
 function stopAutoplay() {
@@ -555,12 +520,9 @@ function stopAutoplay() {
 
     // Update UI
     const playBtn = document.getElementById('play-btn');
-    const playIcon = document.getElementById('play-icon');
-    const playText = document.getElementById('play-text');
-
     playBtn.classList.remove('playing');
-    playIcon.textContent = '▶';
-    playText.textContent = 'Play';
+    playBtn.textContent = '▶';
+    playBtn.title = 'Play (P)';
 }
 
 function closeCarousel() {
