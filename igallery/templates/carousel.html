@@ -193,6 +193,28 @@
         color: #4a9eff;
     }
 
+    /* Fullscreen button */
+    .carousel-fullscreen {
+        position: fixed;
+        top: 20px;
+        left: 30px;
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        z-index: 300;
+        opacity: 0;
+        transition: opacity 0.3s, color 0.2s;
+    }
+
+    .carousel-fullscreen.controls-visible {
+        opacity: 0.7;
+    }
+
+    .carousel-fullscreen:hover {
+        opacity: 1 !important;
+        color: #4a9eff;
+    }
+
     /* Trash button */
     .carousel-trash {
         position: fixed;
@@ -269,6 +291,7 @@
 <div class="carousel-container">
     <!-- Close button -->
     <span class="carousel-close" onclick="closeCarousel()" title="Close (Esc)">×</span>
+    <span class="carousel-fullscreen" onclick="toggleFullscreen()" title="Toggle fullscreen (F)">⛶</span>
     <span class="carousel-trash" onclick="trashCurrentImage()" title="Move to trash (Backspace)">🗑️</span>
 
     <!-- Main image area -->
@@ -300,7 +323,7 @@
 
     <!-- Keyboard shortcuts hint -->
     <div class="shortcuts-hint" id="shortcuts-hint">
-        Space/→/Scroll↓: Next • ←/Scroll↑: Prev • P: Play/Pause • Backspace: Trash • Esc: Close
+        Space/→/Scroll↓: Next • ←/Scroll↑: Prev • P: Play/Pause • F: Fullscreen • Backspace: Trash • Esc: Close
     </div>
 </div>
 {% endblock %}
@@ -683,6 +706,20 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        // Enter fullscreen
+        document.documentElement.requestFullscreen().catch(err => {
+            showToast(`Error entering fullscreen: ${err.message}`, 'error');
+        });
+    } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
+
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
     switch(e.key) {
@@ -730,6 +767,12 @@ document.addEventListener('keydown', function(e) {
                 closeCarousel();
             }
             break;
+        case 'f':
+        case 'F':
+            e.preventDefault();
+            toggleFullscreen();
+            showControls();
+            break;
     }
 });
 
@@ -756,6 +799,7 @@ function showControls() {
     const navNext = document.getElementById('nav-next');
     const shortcuts = document.getElementById('shortcuts-hint');
     const closeBtn = document.querySelector('.carousel-close');
+    const fullscreenBtn = document.querySelector('.carousel-fullscreen');
     const trashBtn = document.querySelector('.carousel-trash');
 
     controls.classList.add('controls-visible');
@@ -763,6 +807,7 @@ function showControls() {
     navNext.classList.add('controls-visible');
     shortcuts.classList.add('controls-visible');
     closeBtn.classList.add('controls-visible');
+    fullscreenBtn.classList.add('controls-visible');
     trashBtn.classList.add('controls-visible');
 
     clearTimeout(controlsTimeout);
@@ -772,6 +817,7 @@ function showControls() {
         navNext.classList.remove('controls-visible');
         shortcuts.classList.remove('controls-visible');
         closeBtn.classList.remove('controls-visible');
+        fullscreenBtn.classList.remove('controls-visible');
         trashBtn.classList.remove('controls-visible');
     }, 2000);
 }

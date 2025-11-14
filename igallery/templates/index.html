@@ -201,6 +201,21 @@
         color: #4a9eff;
     }
 
+    .lightbox-fullscreen {
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        color: white;
+        font-size: 32px;
+        cursor: pointer;
+        z-index: 1001;
+        transition: color 0.2s;
+    }
+
+    .lightbox-fullscreen:hover {
+        color: #4a9eff;
+    }
+
     .lightbox-trash {
         position: absolute;
         bottom: 20px;
@@ -379,7 +394,8 @@
 {% endif %}
 
 <div id="lightbox" class="lightbox">
-    <span class="lightbox-close" onclick="closeLightbox()">×</span>
+    <span class="lightbox-close" onclick="closeLightbox()" title="Close (Esc)">×</span>
+    <span class="lightbox-fullscreen" onclick="toggleFullscreen()" title="Toggle fullscreen (F)">⛶</span>
     <span class="lightbox-trash" onclick="trashCurrentLightboxImage(event)" title="Move to trash">🗑️</span>
     <span class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="prevImage(event)">‹</span>
     <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
@@ -927,6 +943,19 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        // Enter fullscreen
+        document.documentElement.requestFullscreen().catch(err => {
+            showToast(`Error entering fullscreen: ${err.message}`, 'error');
+        });
+    } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
 
 // Keyboard navigation
 document.addEventListener('keydown', function(e) {
@@ -1004,6 +1033,11 @@ document.addEventListener('keydown', function(e) {
                 const currentImage = galleryImages[currentImageIndex];
                 trashImage(currentImage.name, null, true);
             }
+            break;
+        case 'f':
+        case 'F':
+            e.preventDefault();
+            toggleFullscreen();
             break;
     }
 });
