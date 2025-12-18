@@ -8,6 +8,12 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 ### 1. Gallery View (Grid)
 - Display images as thumbnails in a responsive grid
 - Show subdirectories as folder icons
+  - Each folder icon displays: first thumbnail, number of thumbnails, folder name
+  - Empty folders (no images) show empty-folder icon
+  - **Empty folders with no subfolders**: Show delete icon overlay (X icon, not trash-can)
+    - Click to permanently delete the folder from disk
+    - Update view after deletion
+    - Only show toast notification on error
 - Pagination support with configurable items per page
 - Breadcrumb navigation for folder hierarchy
 - Trash button on each thumbnail (visible on hover)
@@ -19,7 +25,8 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
   - Previous/Next arrows for adjacent images
   - Close button (X) to exit lightbox
   - Trash button to move current image to trash
-  - Keyboard shortcuts: Arrow keys, Space, Escape, Backspace/Delete
+  - **Move Up button (▲)** to move current image up one folder
+  - Keyboard shortcuts: Arrow keys, Space, Escape, Backspace/Delete, U (move up)
 - Cross-page navigation:
   - **CRITICAL**: When on last image of page N and user clicks "next":
     - Load page N+1
@@ -37,10 +44,24 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
   - If last image on last page is trashed with no replacement, navigate to previous image
   - If page becomes empty after trash, reload page
   - Maintain proper currentImageIndex after trash operations
+- **Move Up Folder behavior in lightbox**:
+  - Up arrow button (▲) at center-top of lightbox view (30px, positioned at top edge)
+  - Keyboard shortcuts: Up arrow (↑) or 'U' key
+  - Moves image up one folder in directory tree
+  - Removes image from current view after move
+  - Navigates to next image (or previous if moved image was last)
+  - Cannot move images already at gallery root (shows error)
+  - Handles duplicate filenames by appending counter
+  - Keyboard shortcuts hint positioned at bottom to avoid conflict with move-up button
 
 ### 3. Carousel (Slideshow)
 - Full-screen slideshow mode
-- Select least-recently-viewed image from current folder hierarchy
+- **Random Mode**: Toggle between random and sequential (least-recently-viewed) selection
+  - Checkbox control in lower-left control cluster (above play controls)
+  - Mode preference persisted in browser localStorage
+  - Random mode uses SQL `ORDER BY RANDOM()` for selection
+  - Both modes continue to track views in database
+- Select least-recently-viewed image from current folder hierarchy (sequential mode)
 - **CRITICAL**: Carousel must respect current gallery folder context
   - Only show images from current folder and its subdirectories
   - Do NOT show all images from entire gallery root
@@ -48,10 +69,12 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
   - Next/Previous buttons
   - Auto-play with configurable interval
   - Keyboard shortcuts
+  - History-based back/forward navigation works in both modes
 - Preloading:
   - Preload next image for faster display
   - **CRITICAL**: Do NOT record view for preloaded images
   - Only record view when user actually sees the image
+  - Preloading works in both random and sequential modes
 - Trash support: Delete current image from carousel
 
 ### 4. View Tracking
@@ -121,6 +144,10 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 - Python 3.x
 - Path validation to prevent directory traversal
 - Support for nested folder hierarchies
+- Carousel endpoints:
+  - `/carousel/next` - Sequential (least-recently-viewed) mode
+  - `/carousel/random` - Random selection mode
+  - Both respect `preload` parameter for view tracking
 
 ## User Workflows
 
@@ -135,9 +162,13 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 ### Carousel Slideshow
 1. User opens carousel from gallery
 2. Carousel shows images only from current folder context
-3. Shows least-recently-viewed first (oldest files prioritized)
-4. User can trash images directly from carousel
-5. Preloaded images don't pollute view tracking
+3. User can toggle Random mode (checkbox above play controls)
+   - Sequential mode: Shows least-recently-viewed first (oldest files prioritized)
+   - Random mode: Shows images in random order
+4. Mode preference persists across sessions (localStorage)
+5. User can trash images directly from carousel
+6. Preloaded images don't pollute view tracking
+7. Back/forward navigation works in both modes
 
 ### Managing Trash
 1. User trashes image (from grid or lightbox/carousel)
@@ -145,6 +176,15 @@ A web-based image gallery service with thumbnail viewing, pagination, lightbox d
 3. Database records original location
 4. User can visit trash view
 5. User can restore or permanently delete
+
+## Implementation Notes
+
+### Random Mode View Tracking
+- **Behavior**: Random mode continues to record views in the `image_metadata` table
+- **Impact**: Images viewed in Random mode will have recent timestamps
+- **Consequence**: When switching back to Sequential mode, recently-viewed random images will be deprioritized
+- **Design decision**: Accepted trade-off to maintain comprehensive view history
+- **User awareness**: Users should understand that Random mode affects LRV ordering
 
 ## Known Issues to Avoid
 

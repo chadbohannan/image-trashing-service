@@ -234,3 +234,53 @@ class FileOperations:
             return str(Path(full_path).relative_to(self.current_dir))
         except ValueError:
             return str(Path(full_path).name)
+
+    def move_up_folder(self, image_path: str) -> Tuple[str, bool]:
+        """Move an image up one folder in the directory tree.
+
+        Args:
+            image_path: Path to image to move
+
+        Returns:
+            Tuple of (new path to the image, whether move was successful)
+            Returns (original_path, False) if already at gallery root
+
+        Raises:
+            ValueError: If image path is invalid or outside gallery
+        """
+        image_path = Path(image_path).resolve()
+
+        # Verify image is within gallery
+        try:
+            rel_path = image_path.relative_to(self.gallery_root)
+        except ValueError:
+            raise ValueError("Image is outside gallery root")
+
+        # Check if image is already directly in gallery root
+        if image_path.parent == self.gallery_root:
+            return str(image_path), False
+
+        # Get parent directory (one level up)
+        target_dir = image_path.parent.parent
+
+        # Security check: ensure target is within gallery root
+        try:
+            target_dir.relative_to(self.gallery_root)
+        except ValueError:
+            raise ValueError("Cannot move above gallery root")
+
+        # Prepare target path
+        target_path = target_dir / image_path.name
+
+        # Handle duplicate filenames
+        if target_path.exists():
+            counter = 1
+            stem = image_path.stem
+            suffix = image_path.suffix
+            while target_path.exists():
+                target_path = target_dir / f"{stem}_{counter}{suffix}"
+                counter += 1
+
+        # Move the file
+        shutil.move(str(image_path), str(target_path))
+        return str(target_path), True

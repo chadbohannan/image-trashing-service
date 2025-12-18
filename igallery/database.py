@@ -248,6 +248,44 @@ class Database:
             # Fallback: return first image if no records found
             return image_paths[0] if image_paths else None
 
+    def get_random_image(self, image_paths: list[str]) -> Optional[str]:
+        """Get a random image from the provided list.
+
+        Args:
+            image_paths: List of image paths to consider
+
+        Returns:
+            Path to random image, or None if list is empty
+        """
+        if not image_paths:
+            return None
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Create placeholders for SQL IN clause
+            placeholders = ','.join('?' * len(image_paths))
+
+            # Query for a random image from the list
+            cursor.execute(
+                f"""
+                SELECT image_path
+                FROM image_metadata
+                WHERE image_path IN ({placeholders})
+                ORDER BY RANDOM()
+                LIMIT 1
+                """,
+                image_paths
+            )
+
+            row = cursor.fetchone()
+            if row:
+                return row['image_path']
+
+            # Fallback: return random image from list if no records found
+            import random
+            return random.choice(image_paths) if image_paths else None
+
     def delete_thumbnail_record(self, image_path: str):
         """Delete thumbnail record from database.
 
@@ -268,6 +306,38 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM image_metadata WHERE image_path = ?", (image_path,))
+            conn.commit()
+
+    def update_image_path(self, old_path: str, new_path: str):
+        """Update image path in all tables, preserving existing data.
+
+        Args:
+            old_path: Old image path
+            new_path: New image path
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Update thumbnail record
+            cursor.execute(
+                """
+                UPDATE thumbnails
+                SET image_path = ?
+                WHERE image_path = ?
+                """,
+                (new_path, old_path)
+            )
+
+            # Update metadata record
+            cursor.execute(
+                """
+                UPDATE image_metadata
+                SET image_path = ?
+                WHERE image_path = ?
+                """,
+                (new_path, old_path)
+            )
+
             conn.commit()
 
     def add_to_trash(self, trash_path: str, original_path: str):

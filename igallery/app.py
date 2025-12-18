@@ -270,6 +270,44 @@ def create_app(
             'image_path': str(relative_to_gallery)  # Full relative path for operations
         })
 
+    @app.route('/carousel/random')
+    def carousel_random():
+        """Get random image for carousel (random mode)."""
+        relative_path = request.args.get('path', '')
+        preload = request.args.get('preload', 'false') == 'true'
+
+        # Get images from current gallery directory (respects folder hierarchy)
+        current_dir = validate_gallery_path(relative_path)
+        gallery_images = _collect_all_image_paths_in_dir(current_dir, exclude_dirs={'trash'})
+        images = sorted(list(gallery_images))
+
+        if not images:
+            return jsonify({'error': 'No images found'}), 404
+
+        # Sync images (ensures all images have metadata)
+        db.sync_images(images)
+
+        # Select random image
+        selected_image = db.get_random_image(images)
+
+        # Only record view if not preloading
+        if not preload:
+            db.record_view(selected_image)
+
+        # Construct relative path from gallery root to image
+        selected_path = Path(selected_image)
+        gallery_root_path = Path(gallery_root).resolve()
+        relative_to_gallery = selected_path.relative_to(gallery_root_path)
+
+        # Get filename for display
+        image_name = relative_to_gallery.name
+
+        return jsonify({
+            'image_url': f'/image/{relative_to_gallery}',
+            'image_name': image_name,
+            'image_path': str(relative_to_gallery)  # Full relative path for operations
+        })
+
     @app.route('/trash', methods=['POST'])
     def trash():
         """Move image to trash."""
@@ -491,6 +529,79 @@ def create_app(
                 return jsonify({'success': True, 'message': 'Database file does not exist'})
         except Exception as e:
             app.logger.error(f"Error deleting database: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/folder/delete', methods=['POST'])
+    def delete_folder():
+        """Delete an empty folder from the gallery."""
+        try:
+            data = request.get_json()
+            folder_name = data.get('folder_name')
+            relative_path = request.args.get('path', '')
+
+            if not folder_name:
+                return jsonify({'error': 'No folder specified'}), 400
+
+            current_dir = validate_gallery_path(relative_path)
+            folder_path = current_dir / folder_name
+
+            if not folder_path.exists():
+                return jsonify({'error': 'Folder not found'}), 404
+
+            if not folder_path.is_dir():
+                return jsonify({'error': 'Not a directory'}), 400
+
+            # Check that the folder is empty (no files or subdirectories)
+            try:
+                items = list(folder_path.iterdir())
+                if items:
+                    return jsonify({'error': 'Folder is not empty'}), 400
+            except PermissionError:
+                return jsonify({'error': 'Permission denied'}), 403
+
+            # Delete the folder
+            folder_path.rmdir()
+
+            return jsonify({'success': True})
+        except Exception as e:
+            app.logger.error(f"Error deleting folder: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/move-up', methods=['POST'])
+    def move_up():
+        """Move an image up one folder in the directory tree."""
+        try:
+            data = request.get_json()
+            image_path = data.get('image_path')
+
+            if not image_path:
+                return jsonify({'error': 'No image path specified'}), 400
+
+            # Construct full path and validate it's within gallery
+            full_image_path = validate_gallery_path(image_path)
+
+            if not full_image_path.exists():
+                return jsonify({'error': 'Image not found'}), 404
+
+            if not full_image_path.is_file():
+                return jsonify({'error': 'Not a file'}), 400
+
+            # Use FileOperations to move the file
+            file_ops = FileOperations(str(full_image_path.parent), gallery_root=gallery_root)
+            new_path, success = file_ops.move_up_folder(str(full_image_path))
+
+            if not success:
+                return jsonify({'error': 'Image is already at gallery root'}), 400
+
+            # Update database records to reflect new path (preserves timestamps)
+            old_path_str = str(full_image_path.resolve())
+            db.update_image_path(old_path_str, new_path)
+
+            return jsonify({'success': True, 'new_path': new_path})
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            app.logger.error(f"Error moving file up: {e}")
             return jsonify({'error': str(e)}), 500
 
     return app
