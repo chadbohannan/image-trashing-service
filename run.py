@@ -68,7 +68,7 @@ def main():
 
     try:
         subprocess.run(
-            [str(python_venv), "-m", "igallery.app", "--gallery-root", str(resolved_gallery_root)] + sys.argv[2:],
+            [str(python_venv), "-m", "igallery.app", "--host", "0.0.0.0", "--gallery-root", str(resolved_gallery_root)] + sys.argv[2:],
             cwd=project_root,
             env=env
         )

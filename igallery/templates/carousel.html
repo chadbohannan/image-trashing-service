@@ -794,6 +794,12 @@ document.addEventListener('keydown', function(e) {
             toggleFullscreen();
             showControls();
             break;
+        case 'c':
+        case 'C':
+            // Navigate back to gallery
+            e.preventDefault();
+            closeCarousel();
+            break;
     }
 });
 
@@ -889,6 +895,28 @@ document.addEventListener('wheel', function(e) {
         prevImage();
     }
 }, { passive: false }); // passive: false allows preventDefault()
+
+// Mouse button navigation (back/forward buttons)
+// Works in Chrome/Edge/Safari. Firefox blocks these events to protect browser navigation.
+// Need to prevent default on all three events to stop browser navigation
+['mousedown', 'mouseup', 'auxclick'].forEach(function(eventType) {
+    document.addEventListener(eventType, function(e) {
+        // Button 3 = Back button, Button 4 = Forward button
+        if (e.button === 3 || e.button === 4) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Only navigate on mousedown to avoid duplicate navigation
+            if (eventType === 'mousedown') {
+                if (e.button === 3) {
+                    prevImage();
+                } else if (e.button === 4) {
+                    nextImage();
+                }
+            }
+        }
+    }, true); // Capture phase
+});
 
 // Note: We don't automatically show controls on ALL keydown events
 // Individual key handlers decide whether to show controls

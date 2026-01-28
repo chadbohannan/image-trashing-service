@@ -1283,17 +1283,10 @@ document.addEventListener('keydown', function(e) {
             // Close lightbox
             closeLightbox();
         } else {
-            // Navigate up one directory or to trash
+            // Navigate back or to trash
             if (currentPath) {
-                // In a subfolder - go up one level
-                const pathParts = currentPath.split('/');
-                pathParts.pop(); // Remove last segment
-                const parentPath = pathParts.join('/');
-                if (parentPath) {
-                    window.location.href = `/?path=${parentPath}`;
-                } else {
-                    window.location.href = '/';
-                }
+                // In a subfolder - go back in history to preserve scroll position
+                window.history.back();
             } else {
                 // At root - go to trash
                 window.location.href = '/trash-view';
@@ -1325,6 +1318,12 @@ document.addEventListener('keydown', function(e) {
                     e.preventDefault();
                     openLightbox(0);
                 }
+                break;
+            case 'c':
+            case 'C':
+                // Navigate to carousel
+                e.preventDefault();
+                window.location.href = `/carousel?path=${currentPath}`;
                 break;
         }
         return;
@@ -1361,6 +1360,12 @@ document.addEventListener('keydown', function(e) {
         case 'F':
             e.preventDefault();
             toggleFullscreen();
+            break;
+        case 'c':
+        case 'C':
+            // Navigate to carousel
+            e.preventDefault();
+            window.location.href = `/carousel?path=${currentPath}`;
             break;
     }
 });
@@ -1406,5 +1411,35 @@ document.addEventListener('wheel', function(e) {
         prevImage();
     }
 }, { passive: false }); // passive: false allows preventDefault()
+
+// Mouse button navigation for lightbox (back/forward buttons)
+// Works in Chrome/Edge/Safari. Firefox blocks these events to protect browser navigation.
+// Need to prevent default on all three events to stop browser navigation
+['mousedown', 'mouseup', 'auxclick'].forEach(function(eventType) {
+    document.addEventListener(eventType, function(e) {
+        const lightbox = document.getElementById('lightbox');
+        const lightboxActive = lightbox.classList.contains('active');
+
+        // Only handle mouse button events when lightbox is active
+        if (!lightboxActive) {
+            return;
+        }
+
+        // Button 3 = Back button, Button 4 = Forward button
+        if (e.button === 3 || e.button === 4) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Only navigate on mousedown to avoid duplicate navigation
+            if (eventType === 'mousedown') {
+                if (e.button === 3) {
+                    prevImage();
+                } else if (e.button === 4) {
+                    nextImage();
+                }
+            }
+        }
+    }, true); // Capture phase
+});
 </script>
 {% endblock %}

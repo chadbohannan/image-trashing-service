@@ -1,4 +1,21 @@
-"""Database management for iGallery."""
+"""Database management for iGallery.
+
+Timestamp Semantics:
+--------------------
+This module uses several types of timestamps with different update behaviors:
+
+Immutable timestamps (set once, never updated):
+- thumbnails.created_at: When thumbnail was first created
+- image_metadata.file_created_at: File creation time (using st_mtime as proxy,
+  since image files are rarely modified after creation)
+
+Updated timestamps (change over time):
+- image_metadata.last_viewed_at: Updated each time image is viewed
+- trash.trashed_at: When image was moved to trash (updated if re-trashed)
+
+Cache validation timestamps (track source file changes):
+- thumbnails.image_mtime: Source image modification time for cache invalidation
+"""
 
 import sqlite3
 from contextlib import contextmanager
@@ -37,6 +54,9 @@ class Database:
         cursor = conn.cursor()
 
         # Thumbnail cache table - stores thumbnail as BLOB
+        # Timestamps:
+        #   - created_at: Immutable - set once when thumbnail is first created
+        #   - image_mtime: Source image modification time for cache validation
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS thumbnails (
                 image_path TEXT PRIMARY KEY,
@@ -48,12 +68,46 @@ class Database:
         """)
 
         # Image metadata table (for view tracking)
+        # Timestamps:
+        #   - last_viewed_at: Updated each time image is viewed (NULL = never viewed)
+        #   - file_created_at: Immutable creation timestamp using st_mtime
+        #     (For images, mtime effectively equals creation time since they're rarely modified)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS image_metadata (
                 image_path TEXT PRIMARY KEY,
-                last_viewed_at REAL
+                last_viewed_at REAL,
+                file_created_at REAL
             )
         """)
+
+        # Migration: Rename file_mtime to file_created_at (or add if missing)
+        cursor.execute("PRAGMA table_info(image_metadata)")
+        columns = [col[1] for col in cursor.fetchall()]
+
+        if 'file_mtime' in columns and 'file_created_at' not in columns:
+            # Rename existing column
+            cursor.execute("ALTER TABLE image_metadata RENAME COLUMN file_mtime TO file_created_at")
+        elif 'file_created_at' not in columns:
+            # Add new column and populate for existing records
+            cursor.execute("ALTER TABLE image_metadata ADD COLUMN file_created_at REAL")
+
+            # Populate file_created_at for existing records using st_mtime
+            cursor.execute("SELECT image_path FROM image_metadata")
+            rows = cursor.fetchall()
+            for row in rows:
+                image_path = row[0]
+                try:
+                    mtime = Path(image_path).stat().st_mtime
+                    cursor.execute(
+                        "UPDATE image_metadata SET file_created_at = ? WHERE image_path = ?",
+                        (mtime, image_path)
+                    )
+                except (OSError, FileNotFoundError):
+                    # File doesn't exist - use epoch time
+                    cursor.execute(
+                        "UPDATE image_metadata SET file_created_at = ? WHERE image_path = ?",
+                        (0.0, image_path)
+                    )
 
         # Trash table - tracks trashed images
         cursor.execute("""
@@ -74,6 +128,26 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_trashed_at
             ON trash(trashed_at DESC)
         """)
+
+        # Migration: Clean up last_viewed_at for images that were never actually viewed
+        # In old behavior, sync_images set last_viewed_at = mtime for new images
+        # Now we use NULL to indicate never viewed, so we need to fix existing data
+        cursor.execute("SELECT image_path, last_viewed_at FROM image_metadata WHERE last_viewed_at IS NOT NULL")
+        rows = cursor.fetchall()
+
+        for row in rows:
+            image_path, last_viewed_at = row[0], row[1]
+            try:
+                file_mtime = Path(image_path).stat().st_mtime
+                # If timestamps match, image was never viewed - set to NULL
+                if abs(last_viewed_at - file_mtime) < 0.001:
+                    cursor.execute(
+                        "UPDATE image_metadata SET last_viewed_at = NULL WHERE image_path = ?",
+                        (image_path,)
+                    )
+            except (OSError, FileNotFoundError):
+                # File doesn't exist - leave last_viewed_at as-is
+                pass
 
         conn.commit()
 
@@ -131,6 +205,9 @@ class Database:
     ):
         """Save thumbnail to cache.
 
+        On first insert, sets created_at to current time (immutable).
+        On updates, preserves original created_at and only updates thumbnail data.
+
         Args:
             image_path: Path to the original image
             thumbnail_data: Thumbnail image data as bytes
@@ -141,18 +218,30 @@ class Database:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO thumbnails
+                INSERT INTO thumbnails
                 (image_path, thumbnail_data, created_at, image_mtime, image_size)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(image_path) DO UPDATE SET
+                    thumbnail_data = excluded.thumbnail_data,
+                    image_mtime = excluded.image_mtime,
+                    image_size = excluded.image_size
+                    -- created_at is NOT updated, preserving original creation time
                 """,
                 (image_path, thumbnail_data, time.time(), image_mtime, image_size)
             )
             conn.commit()
 
     def sync_images(self, image_paths: list[str]):
-        """Sync image metadata for all images, using mtime for new entries.
+        """Sync image metadata for all images.
 
-        This allows prioritizing older files (by mtime) when they haven't been viewed yet.
+        New images are added with:
+        - last_viewed_at = NULL (indicates never viewed)
+        - file_created_at = st_mtime (immutable creation timestamp)
+
+        For images, st_mtime effectively equals creation time since image files
+        are rarely modified after creation.
+
+        Existing images are NOT updated - timestamps remain immutable.
 
         Args:
             image_paths: List of all image paths to sync
@@ -167,18 +256,18 @@ class Database:
                     (path,)
                 )
                 if not cursor.fetchone():
-                    # New image - insert with mtime as last_viewed_at to prioritize older files
+                    # New image - insert with NULL last_viewed_at (never viewed)
+                    # Use st_mtime as creation time (images aren't modified after creation)
                     try:
-                        from pathlib import Path
                         mtime = Path(path).stat().st_mtime
                     except (OSError, FileNotFoundError):
-                        # If file doesn't exist (e.g., in tests), use epoch time as fallback
+                        # File doesn't exist - use epoch time
                         mtime = 0.0
 
                     cursor.execute(
                         """
-                        INSERT INTO image_metadata (image_path, last_viewed_at)
-                        VALUES (?, ?)
+                        INSERT INTO image_metadata (image_path, last_viewed_at, file_created_at)
+                        VALUES (?, NULL, ?)
                         """,
                         (path, mtime)
                     )
@@ -187,6 +276,9 @@ class Database:
 
     def record_view(self, image_path: str):
         """Record that an image was viewed.
+
+        Updates last_viewed_at to current time. Does not affect file_created_at
+        (which remains immutable).
 
         Args:
             image_path: Path to the viewed image
@@ -207,9 +299,9 @@ class Database:
     def get_least_recently_viewed(self, image_paths: list[str]) -> Optional[str]:
         """Get the least recently viewed image from a list.
 
-        Returns the image with the oldest last_viewed_at timestamp.
-        For unviewed images, last_viewed_at contains the file mtime,
-        so older files are naturally prioritized.
+        Prioritizes images that have never been viewed (last_viewed_at IS NULL),
+        ordered by file creation time (oldest first).
+        Falls back to viewed images ordered by last_viewed_at (oldest first).
 
         Assumes all images have been synced to the database first.
 
@@ -228,13 +320,31 @@ class Database:
             # Create placeholders for SQL IN clause
             placeholders = ','.join('?' * len(image_paths))
 
-            # Query for the image with the oldest last_viewed_at
-            # Unviewed images have mtime, viewed images have actual view timestamp
+            # First, try to get an unviewed image (last_viewed_at IS NULL)
+            # ordered by file creation time (oldest first)
             cursor.execute(
                 f"""
-                SELECT image_path, last_viewed_at
+                SELECT image_path
                 FROM image_metadata
                 WHERE image_path IN ({placeholders})
+                AND last_viewed_at IS NULL
+                ORDER BY file_created_at ASC
+                LIMIT 1
+                """,
+                image_paths
+            )
+
+            row = cursor.fetchone()
+            if row:
+                return row['image_path']
+
+            # No unviewed images - get the least recently viewed
+            cursor.execute(
+                f"""
+                SELECT image_path
+                FROM image_metadata
+                WHERE image_path IN ({placeholders})
+                AND last_viewed_at IS NOT NULL
                 ORDER BY last_viewed_at ASC
                 LIMIT 1
                 """,
@@ -251,6 +361,10 @@ class Database:
     def get_random_image(self, image_paths: list[str]) -> Optional[str]:
         """Get a random image from the provided list.
 
+        Prioritizes images that have never been viewed (last_viewed_at IS NULL).
+        If unviewed images exist, selects randomly from those.
+        Otherwise, selects randomly from all images.
+
         Args:
             image_paths: List of image paths to consider
 
@@ -266,7 +380,24 @@ class Database:
             # Create placeholders for SQL IN clause
             placeholders = ','.join('?' * len(image_paths))
 
-            # Query for a random image from the list
+            # First, try to get a random unviewed image (last_viewed_at IS NULL)
+            cursor.execute(
+                f"""
+                SELECT image_path
+                FROM image_metadata
+                WHERE image_path IN ({placeholders})
+                AND last_viewed_at IS NULL
+                ORDER BY RANDOM()
+                LIMIT 1
+                """,
+                image_paths
+            )
+
+            row = cursor.fetchone()
+            if row:
+                return row['image_path']
+
+            # No unviewed images - get a random image from all images
             cursor.execute(
                 f"""
                 SELECT image_path
@@ -342,6 +473,9 @@ class Database:
 
     def add_to_trash(self, trash_path: str, original_path: str):
         """Record an image as trashed.
+
+        Sets trashed_at to current time. If the same trash path is re-used
+        (unlikely but possible), trashed_at will be updated.
 
         Args:
             trash_path: Path to the image in trash folder
