@@ -571,6 +571,11 @@ document.addEventListener('keydown', function(e) {
                 deleteAllTrash();
             }
         }
+        // 'c' key navigates to carousel
+        if (e.key === 'c' || e.key === 'C') {
+            e.preventDefault();
+            window.location.href = '/carousel';
+        }
         return;
     }
 
@@ -584,6 +589,11 @@ document.addEventListener('keydown', function(e) {
         case ' ':
             e.preventDefault(); // Prevent space from scrolling
             nextImage();
+            break;
+        case 'c':
+        case 'C':
+            e.preventDefault();
+            window.location.href = '/carousel';
             break;
     }
 });
