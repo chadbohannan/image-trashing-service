@@ -1283,10 +1283,12 @@ document.addEventListener('keydown', function(e) {
             // Close lightbox
             closeLightbox();
         } else {
-            // Navigate back or to trash
+            // Navigate up
             if (currentPath) {
-                // In a subfolder - go back in history to preserve scroll position
-                window.history.back();
+                // In a subfolder - go to parent
+                const pathParts = currentPath.split('/').slice(0, -1);
+                const parentPath = pathParts.join('/');
+                window.location.href = `/?path=${parentPath}`;
             } else {
                 // At root - go to trash
                 window.location.href = '/trash-view';
