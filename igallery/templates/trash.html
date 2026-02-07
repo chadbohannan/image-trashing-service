@@ -4,7 +4,7 @@
 
 {% block nav_left %}
 <div class="breadcrumb" style="margin: 0;">
-    <a href="/">Home</a>
+    <a href="/?root={{ root_index }}">Home</a>
     <span>/</span>
     <span style="color: #e0e0e0;">Trash</span>
 </div>
@@ -267,7 +267,7 @@
     <div class="thumbnail-item" data-trash-path="{{ image.path }}" data-original-path="{{ image.original }}">
         <div class="thumbnail-wrapper">
             <img
-                src="/trash/thumbnail/{{ image.path }}"
+                src="/trash/thumbnail/{{ image.path }}?root={{ root_index }}"
                 alt="{{ image.path }}"
                 class="thumbnail-img"
             >
@@ -288,7 +288,7 @@
     <span class="lightbox-close" onclick="closeLightbox()">×</span>
     <span class="lightbox-restore" onclick="restoreCurrentLightboxImage()" title="Restore image">↶</span>
     <span class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="prevImage()">‹</span>
-    <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+    <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()" ondblclick="toggleFullscreen()">
     <span class="lightbox-nav lightbox-next" id="lightbox-next" onclick="nextImage()">›</span>
     <div class="lightbox-filename" id="lightbox-filename"></div>
 </div>
@@ -297,6 +297,7 @@
 {% block extra_js %}
 <script>
 let currentImageCount = {{ image_count }};
+const currentRoot = {{ root_index }};
 
 // Build array of trash images for lightbox navigation
 let trashImages = [];
@@ -309,8 +310,8 @@ function updateTrashImages() {
         trashImages.push({
             trashPath: item.dataset.trashPath,
             originalPath: item.dataset.originalPath,
-            thumbnailUrl: `/trash/thumbnail/${item.dataset.trashPath}`,
-            imageUrl: `/trash/image/${item.dataset.trashPath}`
+            thumbnailUrl: `/trash/thumbnail/${item.dataset.trashPath}?root=${currentRoot}`,
+            imageUrl: `/trash/image/${item.dataset.trashPath}?root=${currentRoot}`
         });
     });
     initLightboxThumbnails();
@@ -336,6 +337,18 @@ function openLightbox(index) {
 function closeLightbox() {
     const lightbox = document.getElementById('lightbox');
     lightbox.classList.remove('active');
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.error(`Error entering fullscreen: ${err.message}`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
 }
 
 function updateLightboxImage() {
@@ -385,7 +398,7 @@ function restoreCurrentLightboxImage() {
 }
 
 function restoreImage(trashPath, fromLightbox = false) {
-    fetch('/trash/restore', {
+    fetch(`/trash/restore?root=${currentRoot}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -461,7 +474,7 @@ function deleteAllTrash() {
     btn.disabled = true;
     btn.textContent = 'Deleting...';
 
-    fetch('/trash/delete-all', {
+    fetch(`/trash/delete-all?root=${currentRoot}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -494,7 +507,7 @@ function deleteMetadata() {
     btn.disabled = true;
     btn.textContent = 'Deleting...';
 
-    fetch('/metadata/delete', {
+    fetch(`/metadata/delete?root=${currentRoot}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -505,7 +518,7 @@ function deleteMetadata() {
         if (data.success) {
             showToast('Metadata deleted successfully. Thumbnails will regenerate as needed.');
             setTimeout(() => {
-                location.href = '/';
+                location.href = `/?root=${currentRoot}`;
             }, 2000);
         } else {
             showToast('Error deleting metadata: ' + (data.error || 'Unknown error'), 'error');
@@ -555,7 +568,7 @@ document.addEventListener('keydown', function(e) {
             closeLightbox();
         } else {
             // Navigate back to gallery root
-            window.location.href = '/';
+            window.location.href = `/?root=${currentRoot}`;
         }
         return;
     }
@@ -574,7 +587,7 @@ document.addEventListener('keydown', function(e) {
         // 'c' key navigates to carousel
         if (e.key === 'c' || e.key === 'C') {
             e.preventDefault();
-            window.location.href = '/carousel';
+            window.location.href = `/carousel?root=${currentRoot}`;
         }
         return;
     }
@@ -593,7 +606,7 @@ document.addEventListener('keydown', function(e) {
         case 'c':
         case 'C':
             e.preventDefault();
-            window.location.href = '/carousel';
+            window.location.href = `/carousel?root=${currentRoot}`;
             break;
     }
 });

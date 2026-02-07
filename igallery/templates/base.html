@@ -139,19 +139,110 @@
             color: #666;
             font-size: 0.9rem;
         }
+
+        .main-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+
+        .nav-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .root-selector {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .root-tab {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            text-decoration: none;
+            background-color: #3a3a3a;
+            color: #aaa;
+        }
+
+        .root-tab.root-active {
+            background-color: #4a9eff;
+            color: white;
+        }
+
+        .root-tab.root-unavailable {
+            background-color: #2a2a2a;
+            color: #555;
+        }
+
+        .nav-separator {
+            color: #555;
+            margin: 0 4px;
+        }
+
+        @media (max-width: 600px) {
+            .main-nav {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .nav-right {
+                align-self: flex-end;
+                margin-top: -1.8em;
+            }
+
+            .nav-separator {
+                display: none;
+            }
+
+            .container {
+                padding: 10px;
+            }
+
+            header {
+                margin-bottom: 15px;
+            }
+
+            nav a {
+                padding: 6px 10px;
+                font-size: 0.9rem;
+            }
+        }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
     <header>
         <div class="container">
-            <nav style="display: flex; justify-content: space-between; align-items: center;">
+            <nav class="main-nav">
                 <div class="nav-left">
+                    {% if roots|length > 1 %}
+                    <div class="root-selector">
+                        {% for root in roots %}
+                        <a href="/?root={{ root.index }}"
+                           class="root-tab{% if root.index == root_index %} root-active{% elif not root.available %} root-unavailable{% endif %}"
+                           {% if not root.available %}title="Unavailable"{% endif %}
+                        >{{ root.name }}{% if not root.available %} ⚠{% endif %}</a>
+                        {% endfor %}
+                    </div>
+                    <span class="nav-separator">|</span>
+                    {% endif %}
                     {% block nav_left %}{% endblock %}
                 </div>
-                <div class="nav-right" style="display: flex; gap: 10px;">
-                    <a href="/carousel?path={{ current_path }}">Carousel</a>
-                    <a href="/trash-view">🗑️ Trash</a>
+                <div class="nav-right">
+                    <a href="/carousel?path={{ current_path }}&root={{ root_index }}">Carousel</a>
+                    <a href="/trash-view?root={{ root_index }}">🗑️ Trash</a>
                 </div>
             </nav>
         </div>

@@ -32,13 +32,18 @@ def main():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(project_root)
 
-    # Determine the gallery root from CLI arguments or default to current directory
-    gallery_root_arg_value = "."
-    if len(sys.argv) > 1:
-        gallery_root_arg_value = sys.argv[1]
-    
-    # Resolve the gallery root to an absolute path immediately
-    resolved_gallery_root = Path(project_root / gallery_root_arg_value).resolve()
+    # Determine gallery roots from CLI arguments or default to current directory
+    gallery_root_args = sys.argv[1:] if len(sys.argv) > 1 else ["."]
+    resolved_gallery_roots = []
+    for arg in gallery_root_args:
+        resolved = Path(project_root / arg).resolve()
+        if resolved.is_dir():
+            resolved_gallery_roots.append(resolved)
+        else:
+            print(f"Warning: skipping '{arg}' (not a directory)")
+    if not resolved_gallery_roots:
+        print("Error: no valid gallery directories provided")
+        sys.exit(1)
 
     # Get local IP address for network access info
     def get_local_ip():
@@ -58,7 +63,12 @@ def main():
     print("\n" + "="*60)
     print("Image Trashing Service")
     print("="*60)
-    print(f"Gallery: {resolved_gallery_root}")
+    if len(resolved_gallery_roots) == 1:
+        print(f"Gallery: {resolved_gallery_roots[0]}")
+    else:
+        print(f"Galleries ({len(resolved_gallery_roots)}):")
+        for i, root in enumerate(resolved_gallery_roots):
+            print(f"  [{i}] {root}")
     print(f"\nAccess URLs:")
     print(f"  Local:   http://localhost:8000")
     if local_ip:
@@ -67,8 +77,11 @@ def main():
     print("="*60 + "\n")
 
     try:
+        gallery_root_flags = []
+        for root in resolved_gallery_roots:
+            gallery_root_flags.extend(["--gallery-root", str(root)])
         subprocess.run(
-            [str(python_venv), "-m", "igallery.app", "--host", "0.0.0.0", "--gallery-root", str(resolved_gallery_root)] + sys.argv[2:],
+            [str(python_venv), "-m", "igallery.app", "--host", "0.0.0.0"] + gallery_root_flags,
             cwd=project_root,
             env=env
         )

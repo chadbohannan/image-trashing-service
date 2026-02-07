@@ -317,7 +317,7 @@
     <!-- Main image area -->
     <div class="carousel-image-wrapper">
         <div class="loading" id="loading"></div>
-        <img class="carousel-image hidden" id="carousel-image" src="" alt="">
+        <img class="carousel-image hidden" id="carousel-image" src="" alt="" ondblclick="toggleFullscreen()">
     </div>
 
     <!-- Navigation arrows -->
@@ -357,6 +357,7 @@ let isPlaying = false;
 let imageHistory = [];  // Track viewed images for back navigation
 let historyIndex = -1;  // Current position in history
 const currentPath = "{{ current_path }}";
+const currentRoot = {{ root_index }};
 let preloadedImage = null;  // Preloaded next image
 let randomMode = localStorage.getItem('carouselRandomMode') === 'true';  // Random mode state
 
@@ -418,7 +419,7 @@ function nextImage() {
 
     // Use appropriate endpoint based on mode
     const endpoint = randomMode ? '/carousel/random' : '/carousel/next';
-    fetch(`${endpoint}?path=${currentPath}`)
+    fetch(`${endpoint}?path=${currentPath}&root=${currentRoot}`)
         .then(response => {
             if (!response.ok) {
                 return response.text().then(text => {
@@ -517,7 +518,7 @@ function preloadNextImage() {
     // Fetch metadata for next image (with preload flag to avoid recording view)
     // Use appropriate endpoint based on mode
     const endpoint = randomMode ? '/carousel/random' : '/carousel/next';
-    fetch(`${endpoint}?path=${currentPath}&preload=true`)
+    fetch(`${endpoint}?path=${currentPath}&preload=true&root=${currentRoot}`)
         .then(response => response.json())
         .then(data => {
             if (data.error) {
@@ -583,7 +584,7 @@ function stopAutoplay() {
 }
 
 function closeCarousel() {
-    window.location.href = `/?path=${currentPath}`;
+    window.location.href = `/?path=${currentPath}&root=${currentRoot}`;
 }
 
 function trashCurrentImage() {
@@ -598,7 +599,7 @@ function trashCurrentImage() {
     const lastSlash = fullImagePath.lastIndexOf('/');
     const dirPath = lastSlash !== -1 ? fullImagePath.substring(0, lastSlash) : '';
 
-    fetch(`/trash?path=${dirPath}`, {
+    fetch(`/trash?path=${dirPath}&root=${currentRoot}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -667,7 +668,7 @@ function trashCurrentImage() {
 
                     // Use appropriate endpoint based on mode
                     const endpoint = randomMode ? '/carousel/random' : '/carousel/next';
-                    fetch(`${endpoint}?path=${currentPath}`)
+                    fetch(`${endpoint}?path=${currentPath}&root=${currentRoot}`)
                         .then(response => response.json())
                         .then(data => {
                             if (data.error) {

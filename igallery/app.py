@@ -38,60 +38,87 @@ def _collect_all_image_paths_in_dir(directory: Path, exclude_dirs: set[str] = No
 
 
 def create_app(
-    gallery_root: str = ".",
-    db_path: str = ".igallery.db"
+    gallery_roots: list[str] = None,
+    db_paths: list[str] = None,
+    # Legacy single-root interface for backward compat (e.g. tests)
+    gallery_root: str = None,
+    db_path: str = None,
 ):
     """Create and configure Flask application.
 
     Args:
-        gallery_root: Root directory for image gallery
-        db_path: Path to SQLite database
+        gallery_roots: List of root directories for image galleries
+        db_paths: List of paths to SQLite databases (one per root)
+        gallery_root: Single gallery root (legacy, use gallery_roots instead)
+        db_path: Single db path (legacy, use db_paths instead)
 
     Returns:
         Configured Flask application
     """
+    # Normalize to list form
+    if gallery_roots is None:
+        gallery_roots = [gallery_root or "."]
+    if db_paths is None:
+        if db_path:
+            db_paths = [db_path]
+        else:
+            db_paths = [str(Path(r).resolve() / '.igallery.db') for r in gallery_roots]
+
     app = Flask(__name__)
-    app.config['GALLERY_ROOT'] = gallery_root
-    app.config['DB_PATH'] = db_path
 
-    # Initialize services
-    db = Database(db_path)
-    thumbnail_service = ThumbnailService(db)
+    # Build roots registry
+    roots = []
+    for i, (root_path, root_db_path) in enumerate(zip(gallery_roots, db_paths)):
+        resolved = str(Path(root_path).resolve())
+        db = Database(root_db_path)
+        roots.append({
+            'index': i,
+            'name': Path(resolved).name,
+            'path': resolved,
+            'db_path': root_db_path,
+            'db': db,
+            'thumbnail_service': ThumbnailService(db),
+        })
 
-    # Track cleanup status
+    # Store config for backward compat
+    app.config['GALLERY_ROOT'] = roots[0]['path']
+    app.config['GALLERY_ROOTS'] = roots
+    app.config['DB_PATH'] = roots[0]['db_path']
+
+    # Track cleanup status per root
     cleanup_status = {'in_progress': False, 'last_run': None}
 
     def cleanup_orphaned_records_async():
-        """Background task to cleanup orphaned database records."""
+        """Background task to cleanup orphaned database records for all roots."""
         if cleanup_status['in_progress']:
-            return  # Already running
+            return
 
         cleanup_status['in_progress'] = True
         try:
-            gallery_path = Path(gallery_root).resolve()
-            trash_path = gallery_path / "trash"
+            for root_info in roots:
+                gallery_path = Path(root_info['path']).resolve()
+                if not gallery_path.exists():
+                    continue  # Skip missing roots to avoid purging valid records
+                trash_path = gallery_path / "trash"
+                root_db = root_info['db']
 
-            # Collect valid paths
-            valid_gallery = _collect_all_image_paths_in_dir(gallery_path, exclude_dirs={'trash'})
-            valid_trash = _collect_all_image_paths_in_dir(trash_path) if trash_path.exists() else set()
+                valid_gallery = _collect_all_image_paths_in_dir(gallery_path, exclude_dirs={'trash'})
+                valid_trash = _collect_all_image_paths_in_dir(trash_path) if trash_path.exists() else set()
 
-            # Cleanup
-            orphaned_thumbs, orphaned_meta, orphaned_trash = db.cleanup_orphaned_records(
-                valid_gallery, valid_trash
-            )
+                orphaned_thumbs, orphaned_meta, orphaned_trash = root_db.cleanup_orphaned_records(
+                    valid_gallery, valid_trash
+                )
+
+                if orphaned_thumbs or orphaned_meta or orphaned_trash:
+                    print(f"Cleanup [{root_info['name']}]: Removed {orphaned_thumbs} thumbnails, {orphaned_meta} metadata, {orphaned_trash} trash records")
 
             import time
             cleanup_status['last_run'] = time.time()
-
-            if orphaned_thumbs or orphaned_meta or orphaned_trash:
-                print(f"Cleanup: Removed {orphaned_thumbs} thumbnails, {orphaned_meta} metadata, {orphaned_trash} trash records")
         except Exception as e:
-            # Silently handle errors in background thread
             print(f"Background cleanup error: {e}")
         finally:
             cleanup_status['in_progress'] = False
 
-    # Start background cleanup on first request (skip in testing mode)
     @app.before_request
     def lazy_cleanup():
         """Trigger cleanup on first request only."""
@@ -100,11 +127,29 @@ def create_app(
         if cleanup_status['last_run'] is None and not cleanup_status['in_progress']:
             threading.Thread(target=cleanup_orphaned_records_async, daemon=True).start()
 
-    def validate_gallery_path(relative_path: str = '') -> Path:
+    def get_active_root():
+        """Get active gallery root from request's 'root' query param."""
+        try:
+            idx = int(request.args.get('root', 0))
+        except (ValueError, TypeError):
+            abort(400, 'Invalid root index')
+        if idx < 0 or idx >= len(roots):
+            abort(400, 'Invalid root index')
+        return roots[idx]
+
+    def get_root_param():
+        """Get current root index for URL propagation."""
+        try:
+            return int(request.args.get('root', 0))
+        except (ValueError, TypeError):
+            return 0
+
+    def validate_gallery_path(relative_path: str = '', active_root=None) -> Path:
         """Validate and resolve a gallery path.
 
         Args:
             relative_path: Relative path within gallery
+            active_root: Root info dict (if None, resolved from request)
 
         Returns:
             Resolved Path object
@@ -113,6 +158,9 @@ def create_app(
             403: Path traversal attempt
             400: Invalid path
         """
+        if active_root is None:
+            active_root = get_active_root()
+        gallery_root = active_root['path']
         try:
             current_dir = (Path(gallery_root) / relative_path).resolve()
             gallery_root_resolved = Path(gallery_root).resolve()
@@ -122,12 +170,52 @@ def create_app(
         except Exception:
             abort(400)
 
+    def _roots_with_availability():
+        """Return roots list with current availability status."""
+        def _is_available(path):
+            try:
+                # Try to actually read the directory; Path.exists() can
+                # return False for FUSE/encrypted mount points even when
+                # they are accessible.
+                next(Path(path).iterdir(), None)
+                return True
+            except (PermissionError, OSError):
+                return False
+
+        return [
+            {**r, 'available': _is_available(r['path'])}
+            for r in roots
+        ]
+
     @app.route('/')
     def index():
         """Gallery index page with thumbnail grid."""
-        # Get path parameter for subdirectory navigation
+        active = get_active_root()
+        root_index = get_root_param()
+        gallery_root = active['path']
+        try:
+            next(Path(gallery_root).iterdir(), None)
+            root_available = True
+        except (PermissionError, OSError):
+            root_available = False
+
+        if not root_available:
+            return render_template(
+                'index.html',
+                items=[],
+                page=1,
+                per_page=20,
+                total_pages=0,
+                current_path='',
+                breadcrumbs=[],
+                has_parent=False,
+                roots=_roots_with_availability(),
+                root_index=root_index,
+                root_unavailable=True,
+            )
+
         relative_path = request.args.get('path', '')
-        current_dir = validate_gallery_path(relative_path)
+        current_dir = validate_gallery_path(relative_path, active)
 
         file_ops = FileOperations(str(current_dir), gallery_root=gallery_root)
 
@@ -162,13 +250,16 @@ def create_app(
             total_pages=total_pages,
             current_path=relative_path,
             breadcrumbs=breadcrumbs,
-            has_parent=relative_path != ''
+            has_parent=relative_path != '',
+            roots=_roots_with_availability(),
+            root_index=root_index,
         )
 
     @app.route('/thumbnail/<path:image_path>')
     def thumbnail(image_path):
         """Serve thumbnail for an image."""
-        full_image_path = validate_gallery_path(image_path)
+        active = get_active_root()
+        full_image_path = validate_gallery_path(image_path, active)
 
         if not full_image_path.exists():
             abort(404)
@@ -181,24 +272,21 @@ def create_app(
         if_modified_since = request.headers.get('If-Modified-Since')
         if if_modified_since:
             try:
-                # Parse client's cached timestamp
                 client_mtime = datetime.strptime(if_modified_since, '%a, %d %b %Y %H:%M:%S GMT')
-                # If file hasn't been modified, return 304 Not Modified
                 if last_modified <= client_mtime:
                     return make_response('', 304)
             except ValueError:
-                pass  # Invalid date format, ignore
+                pass
 
         # Generate or retrieve thumbnail
         try:
-            thumbnail_data = thumbnail_service.get_or_create_thumbnail(str(full_image_path))
+            thumbnail_data = active['thumbnail_service'].get_or_create_thumbnail(str(full_image_path))
             response = make_response(send_file(
                 io.BytesIO(thumbnail_data),
                 mimetype='image/jpeg',
                 as_attachment=False
             ))
 
-            # Set caching headers
             response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
             response.headers['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
 
@@ -210,15 +298,16 @@ def create_app(
     @app.route('/image/<path:image_path>')
     def image(image_path):
         """Serve full-size image."""
+        active = get_active_root()
         preload = request.args.get('preload', 'false') == 'true'
-        full_image_path = validate_gallery_path(image_path)
+        full_image_path = validate_gallery_path(image_path, active)
 
         if not full_image_path.exists():
             abort(404)
 
         # Record view only if not preloading
         if not preload:
-            db.record_view(str(full_image_path))
+            active['db'].record_view(str(full_image_path))
 
         return send_file(str(full_image_path))
 
@@ -226,91 +315,92 @@ def create_app(
     def carousel():
         """Carousel page."""
         relative_path = request.args.get('path', '')
+        root_index = get_root_param()
 
         return render_template(
             'carousel.html',
-            current_path=relative_path
+            current_path=relative_path,
+            roots=_roots_with_availability(),
+            root_index=root_index,
         )
 
     @app.route('/carousel/next')
     def carousel_next():
         """Get next image for carousel (slideshow mode)."""
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+
         relative_path = request.args.get('path', '')
         preload = request.args.get('preload', 'false') == 'true'
 
-        # Get images from current gallery directory (respects folder hierarchy)
-        current_dir = validate_gallery_path(relative_path)
+        current_dir = validate_gallery_path(relative_path, active)
         gallery_images = _collect_all_image_paths_in_dir(current_dir, exclude_dirs={'trash'})
         images = sorted(list(gallery_images))
 
         if not images:
             return jsonify({'error': 'No images found'}), 404
 
-        # Sync images (ensures all images have metadata)
         db.sync_images(images)
-
-        # Select least recently viewed image
         selected_image = db.get_least_recently_viewed(images)
 
-        # Only record view if not preloading
         if not preload:
             db.record_view(selected_image)
 
-        # Construct relative path from gallery root to image
         selected_path = Path(selected_image)
         gallery_root_path = Path(gallery_root).resolve()
         relative_to_gallery = selected_path.relative_to(gallery_root_path)
 
-        # Get filename for display
         image_name = relative_to_gallery.name
 
         return jsonify({
-            'image_url': f'/image/{relative_to_gallery}',
+            'image_url': f'/image/{relative_to_gallery}?root={get_root_param()}',
             'image_name': image_name,
-            'image_path': str(relative_to_gallery)  # Full relative path for operations
+            'image_path': str(relative_to_gallery)
         })
 
     @app.route('/carousel/random')
     def carousel_random():
         """Get random image for carousel (random mode)."""
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+
         relative_path = request.args.get('path', '')
         preload = request.args.get('preload', 'false') == 'true'
 
-        # Get images from current gallery directory (respects folder hierarchy)
-        current_dir = validate_gallery_path(relative_path)
+        current_dir = validate_gallery_path(relative_path, active)
         gallery_images = _collect_all_image_paths_in_dir(current_dir, exclude_dirs={'trash'})
         images = sorted(list(gallery_images))
 
         if not images:
             return jsonify({'error': 'No images found'}), 404
 
-        # Sync images (ensures all images have metadata)
         db.sync_images(images)
-
-        # Select random image
         selected_image = db.get_random_image(images)
 
-        # Only record view if not preloading
         if not preload:
             db.record_view(selected_image)
 
-        # Construct relative path from gallery root to image
         selected_path = Path(selected_image)
         gallery_root_path = Path(gallery_root).resolve()
         relative_to_gallery = selected_path.relative_to(gallery_root_path)
 
-        # Get filename for display
         image_name = relative_to_gallery.name
 
         return jsonify({
-            'image_url': f'/image/{relative_to_gallery}',
+            'image_url': f'/image/{relative_to_gallery}?root={get_root_param()}',
             'image_name': image_name,
-            'image_path': str(relative_to_gallery)  # Full relative path for operations
+            'image_path': str(relative_to_gallery)
         })
 
     @app.route('/trash', methods=['POST'])
     def trash():
         """Move image to trash."""
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+
         data = request.get_json()
         image_name = data.get('image_name')
         relative_path = request.args.get('path', '')
@@ -318,7 +408,7 @@ def create_app(
         if not image_name:
             return jsonify({'error': 'No image specified'}), 400
 
-        current_dir = validate_gallery_path(relative_path)
+        current_dir = validate_gallery_path(relative_path, active)
 
         file_ops = FileOperations(str(current_dir), gallery_root=gallery_root)
         image_path = current_dir / image_name
@@ -327,12 +417,8 @@ def create_app(
             return jsonify({'error': 'Image not found'}), 404
 
         try:
-            # Move to trash and get new path
             trash_path = file_ops.move_to_trash(str(image_path))
-
-            # Record in database
             db.add_to_trash(trash_path, str(image_path))
-
             return jsonify({'success': True})
         except Exception as e:
             app.logger.error(f"Error moving to trash: {e}")
@@ -341,18 +427,19 @@ def create_app(
     @app.route('/trash-view')
     def trash_view():
         """View images in trash."""
-        # Sync trash folder with database (recovers from database deletion)
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+        root_index = get_root_param()
+
         trash_dir = Path(gallery_root) / "trash"
         db.sync_trash_folder(str(trash_dir), gallery_root)
 
-        # Get trashed images from database
         trashed_images = db.list_trashed_images()
 
-        # Extract just the filenames and paths for template
         trash_items = []
         for item in trashed_images:
             trash_path = Path(item['trash_path'])
-            # Get relative path from trash folder
             try:
                 rel_path = trash_path.relative_to(Path(gallery_root) / "trash")
                 display_path = str(rel_path)
@@ -368,44 +455,41 @@ def create_app(
         return render_template(
             'trash.html',
             images=trash_items,
-            image_count=len(trash_items)
+            image_count=len(trash_items),
+            roots=_roots_with_availability(),
+            root_index=root_index,
         )
 
     @app.route('/trash/thumbnail/<path:relative_path>')
     def trash_thumbnail(relative_path):
         """Serve thumbnail for a trashed image."""
-        trash_dir = Path(gallery_root) / "trash"
+        active = get_active_root()
+        trash_dir = Path(active['path']) / "trash"
         image_path = trash_dir / relative_path
 
         if not image_path.exists():
             abort(404)
 
-        # Get image modification time for cache validation
         image_mtime = os.path.getmtime(str(image_path))
         last_modified = datetime.fromtimestamp(image_mtime, timezone.utc)
 
-        # Check if client has a cached version
         if_modified_since = request.headers.get('If-Modified-Since')
         if if_modified_since:
             try:
-                # Parse client's cached timestamp
                 client_mtime = datetime.strptime(if_modified_since, '%a, %d %b %Y %H:%M:%S GMT')
-                # If file hasn't been modified, return 304 Not Modified
                 if last_modified <= client_mtime:
                     return make_response('', 304)
             except ValueError:
-                pass  # Invalid date format, ignore
+                pass
 
-        # Generate or retrieve thumbnail
         try:
-            thumbnail_data = thumbnail_service.get_or_create_thumbnail(str(image_path))
+            thumbnail_data = active['thumbnail_service'].get_or_create_thumbnail(str(image_path))
             response = make_response(send_file(
                 io.BytesIO(thumbnail_data),
                 mimetype='image/jpeg',
                 as_attachment=False
             ))
 
-            # Set caching headers
             response.headers['Last-Modified'] = last_modified.strftime('%a, %d %b %Y %H:%M:%S GMT')
             response.headers['Cache-Control'] = 'private, no-cache, no-store, must-revalidate'
 
@@ -417,7 +501,8 @@ def create_app(
     @app.route('/trash/image/<path:relative_path>')
     def trash_image(relative_path):
         """Serve full-size trashed image."""
-        trash_dir = Path(gallery_root) / "trash"
+        active = get_active_root()
+        trash_dir = Path(active['path']) / "trash"
         image_path = trash_dir / relative_path
 
         if not image_path.exists():
@@ -428,6 +513,10 @@ def create_app(
     @app.route('/trash/restore', methods=['POST'])
     def restore_from_trash():
         """Restore an image from trash to its original location."""
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+
         try:
             data = request.get_json()
             relative_trash_path = data.get('trash_path')
@@ -435,31 +524,24 @@ def create_app(
             if not relative_trash_path:
                 return jsonify({'error': 'No trash path provided'}), 400
 
-            # Construct full trash path and resolve it (to handle symlinks like /var -> /private/var on macOS)
             trash_path = str((Path(gallery_root) / "trash" / relative_trash_path).resolve())
 
-            # Get trash record from database
             trash_item = db.get_trash_item(trash_path)
             if not trash_item:
                 return jsonify({'error': 'Image not found in trash database'}), 404
 
             original_path = trash_item['original_path']
 
-            # Verify trash file exists
             if not Path(trash_path).exists():
                 return jsonify({'error': 'Trash file not found on disk'}), 404
 
-            # Create original directory if needed
             Path(original_path).parent.mkdir(parents=True, exist_ok=True)
 
-            # Move file back to original location
             import shutil
             shutil.move(trash_path, original_path)
 
-            # Remove trash record from database
             db.remove_from_trash(trash_path)
 
-            # Clean up empty subdirectories in trash
             trash_dir = Path(gallery_root) / "trash"
             try:
                 parent_dir = Path(trash_path).parent
@@ -480,25 +562,25 @@ def create_app(
     @app.route('/trash/delete-all', methods=['POST'])
     def delete_all_trash():
         """Permanently delete all files in trash."""
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+
         try:
-            # Get all trashed images from database
             trashed_images = db.list_trashed_images()
 
             for item in trashed_images:
                 trash_path = item['trash_path']
 
-                # Delete physical file
                 if Path(trash_path).exists():
                     Path(trash_path).unlink()
 
-                # Clean up database records
                 db.delete_thumbnail_record(trash_path)
                 db.delete_metadata_record(trash_path)
                 db.remove_from_trash(trash_path)
 
             deleted_count = len(trashed_images)
 
-            # Clean up empty subdirectories in trash
             trash_dir = Path(gallery_root) / "trash"
             if trash_dir.exists():
                 for root, dirs, files in os.walk(trash_dir, topdown=False):
@@ -518,11 +600,12 @@ def create_app(
     @app.route('/metadata/delete', methods=['POST'])
     def delete_metadata():
         """Delete the database file to clear all metadata."""
+        active = get_active_root()
+
         try:
-            db_path_obj = Path(app.config['DB_PATH'])
+            db_path_obj = Path(active['db_path'])
 
             if db_path_obj.exists():
-                # Delete the database file
                 db_path_obj.unlink()
                 return jsonify({'success': True, 'message': 'Database deleted successfully'})
             else:
@@ -534,6 +617,8 @@ def create_app(
     @app.route('/folder/delete', methods=['POST'])
     def delete_folder():
         """Delete an empty folder from the gallery."""
+        active = get_active_root()
+
         try:
             data = request.get_json()
             folder_name = data.get('folder_name')
@@ -542,7 +627,7 @@ def create_app(
             if not folder_name:
                 return jsonify({'error': 'No folder specified'}), 400
 
-            current_dir = validate_gallery_path(relative_path)
+            current_dir = validate_gallery_path(relative_path, active)
             folder_path = current_dir / folder_name
 
             if not folder_path.exists():
@@ -551,7 +636,6 @@ def create_app(
             if not folder_path.is_dir():
                 return jsonify({'error': 'Not a directory'}), 400
 
-            # Check that the folder is empty (no files or subdirectories)
             try:
                 items = list(folder_path.iterdir())
                 if items:
@@ -559,7 +643,6 @@ def create_app(
             except PermissionError:
                 return jsonify({'error': 'Permission denied'}), 403
 
-            # Delete the folder
             folder_path.rmdir()
 
             return jsonify({'success': True})
@@ -570,6 +653,10 @@ def create_app(
     @app.route('/move-up', methods=['POST'])
     def move_up():
         """Move an image up one folder in the directory tree."""
+        active = get_active_root()
+        gallery_root = active['path']
+        db = active['db']
+
         try:
             data = request.get_json()
             image_path = data.get('image_path')
@@ -577,8 +664,7 @@ def create_app(
             if not image_path:
                 return jsonify({'error': 'No image path specified'}), 400
 
-            # Construct full path and validate it's within gallery
-            full_image_path = validate_gallery_path(image_path)
+            full_image_path = validate_gallery_path(image_path, active)
 
             if not full_image_path.exists():
                 return jsonify({'error': 'Image not found'}), 404
@@ -586,14 +672,12 @@ def create_app(
             if not full_image_path.is_file():
                 return jsonify({'error': 'Not a file'}), 400
 
-            # Use FileOperations to move the file
             file_ops = FileOperations(str(full_image_path.parent), gallery_root=gallery_root)
             new_path, success = file_ops.move_up_folder(str(full_image_path))
 
             if not success:
                 return jsonify({'error': 'Image is already at gallery root'}), 400
 
-            # Update database records to reflect new path (preserves timestamps)
             old_path_str = str(full_image_path.resolve())
             db.update_image_path(old_path_str, new_path)
 
@@ -627,22 +711,29 @@ def main():
     )
     parser.add_argument(
         '--gallery-root',
-        default='.',
-        help='Root directory for image gallery (default: current directory)'
+        action='append',
+        default=None,
+        help='Root directory for image gallery (can be specified multiple times)'
     )
 
     args = parser.parse_args()
 
-    gallery_root = Path(args.gallery_root).resolve()
-    db_path = str(gallery_root / '.igallery.db')
+    gallery_root_list = args.gallery_root or ['.']
+    gallery_roots = [str(Path(r).resolve()) for r in gallery_root_list]
+    db_paths = [str(Path(r) / '.igallery.db') for r in gallery_roots]
 
     app = create_app(
-        gallery_root=str(gallery_root),
-        db_path=db_path
+        gallery_roots=gallery_roots,
+        db_paths=db_paths,
     )
 
     print(f"Starting Image Trashing Service on http://{args.host}:{args.port}")
-    print(f"Gallery root: {gallery_root}")
+    if len(gallery_roots) == 1:
+        print(f"Gallery root: {gallery_roots[0]}")
+    else:
+        print(f"Gallery roots ({len(gallery_roots)}):")
+        for i, r in enumerate(gallery_roots):
+            print(f"  [{i}] {r}")
     print("Press Ctrl+C to stop\n")
 
     # Suppress Flask's shutdown messages

@@ -38,6 +38,9 @@ class Database:
 
     def _init_schema(self):
         """Create database tables if they don't exist."""
+        db_parent = Path(self.db_path).parent
+        if not db_parent.exists():
+            return  # Parent dir missing (e.g. unmounted device); schema will init lazily
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -156,6 +159,8 @@ class Database:
         """Context manager for database connections.
 
         Automatically reinitializes schema if database was deleted/corrupted.
+        Raises sqlite3.OperationalError if parent directory doesn't exist
+        (e.g. unmounted device).
         """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row

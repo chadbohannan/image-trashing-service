@@ -422,37 +422,45 @@
 {% endblock %}
 
 {% block nav_left %}
+{% if breadcrumbs %}
 <div class="breadcrumb" style="margin: 0;">
-    <a href="/">Home</a>
     {% for crumb in breadcrumbs %}
-        <span>/</span>
-        <a href="/?path={{ crumb.path }}">{{ crumb.name }}</a>
+        {% if not loop.first %}<span>/</span>{% endif %}
+        <a href="/?path={{ crumb.path }}&root={{ root_index }}">{{ crumb.name }}</a>
     {% endfor %}
 </div>
+{% endif %}
 {% endblock %}
 
 {% block content %}
-{% if items %}
+{% if root_unavailable is defined and root_unavailable %}
+<div class="empty-message">
+    <p>This gallery root is currently unavailable.</p>
+    <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">
+        The folder may be on an unmounted device. It will appear automatically when the device is connected.
+    </p>
+</div>
+{% elif items %}
 <div class="images">
     {% if total_pages > 1 %}
     <div class="pagination">
-        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}" class="{% if page <= 1 %}disabled{% endif %}">← Previous</a>
+        <a href="/?path={{ current_path }}&page={{ page - 1 }}&per_page={{ per_page }}&root={{ root_index }}" class="{% if page <= 1 %}disabled{% endif %}">← Previous</a>
 
         <span class="current">{{ page }}</span>
         <span>of {{ total_pages }}</span>
 
-        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}" class="{% if page >= total_pages %}disabled{% endif %}">Next →</a>
+        <a href="/?path={{ current_path }}&page={{ page + 1 }}&per_page={{ per_page }}&root={{ root_index }}" class="{% if page >= total_pages %}disabled{% endif %}">Next →</a>
     </div>
     {% endif %}
     <div class="thumbnail-grid" id="thumbnail-grid">
         {% for item in items %}
             {% if item.type == 'directory' %}
-                <a href="/?path={{ (current_path + '/' + item.name) if current_path else item.name }}" class="thumbnail-item" data-type="directory" data-folder="{{ item.name }}" title="{{ item.name }}">
+                <a href="/?path={{ (current_path + '/' + item.name) if current_path else item.name }}&root={{ root_index }}" class="thumbnail-item" data-type="directory" data-folder="{{ item.name }}" title="{{ item.name }}">
                     <div class="thumbnail-wrapper">
                         <div class="folder-thumbnail">
                             {% if item.first_image %}
                                 <div class="folder-preview">
-                                    <img src="/thumbnail/{{ (current_path + '/' + item.name + '/' + item.first_image) if current_path else (item.name + '/' + item.first_image) }}" alt="{{ item.name }}">
+                                    <img src="/thumbnail/{{ (current_path + '/' + item.name + '/' + item.first_image) if current_path else (item.name + '/' + item.first_image) }}?root={{ root_index }}" alt="{{ item.name }}">
                                 </div>
                             {% else %}
                                 <span class="folder-icon">📁</span>
@@ -473,7 +481,7 @@
                 <div class="thumbnail-item" data-image="{{ item.name }}" data-type="image">
                     <div class="thumbnail-wrapper">
                         <img
-                            src="/thumbnail/{{ (current_path + '/' + item.name) if current_path else item.name }}"
+                            src="/thumbnail/{{ (current_path + '/' + item.name) if current_path else item.name }}?root={{ root_index }}"
                             alt="{{ item.name }}"
                             class="thumbnail-img"
                         >
@@ -502,7 +510,7 @@
     <span class="lightbox-trash" onclick="trashCurrentLightboxImage(event)" title="Move to trash (Backspace)">🗑️</span>
     <span class="lightbox-move-up" onclick="moveUpCurrentImage(event)" title="Move up one folder (↑ or U)">▲</span>
     <span class="lightbox-nav lightbox-prev" id="lightbox-prev" onclick="prevImage(event)">‹</span>
-    <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+    <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()" ondblclick="toggleFullscreen()">
     <span class="lightbox-nav lightbox-next" id="lightbox-next" onclick="nextImage(event)">›</span>
 
     <!-- Keyboard shortcuts hint -->
@@ -559,6 +567,7 @@ window.addEventListener('DOMContentLoaded', function() {
 let currentPage = {{ page }};
 let totalPages = {{ total_pages }};
 const currentPath = "{{ current_path }}";
+const currentRoot = {{ root_index }};
 let optimalPerPage = {{ per_page }}; // Will be updated on DOMContentLoaded if needed
 
 // Build array of images for lightbox navigation
@@ -571,7 +580,7 @@ function updateGalleryImages(items) {
         if (item.type === 'image') {
             galleryImages.push({
                 name: item.name,
-                url: `/image/${currentPath ? currentPath + '/' + item.name : item.name}`
+                url: `/image/${currentPath ? currentPath + '/' + item.name : item.name}?root=${currentRoot}`
             });
         }
     });
@@ -700,7 +709,7 @@ function preloadAdjacentImages() {
 
 async function loadImagesForPage(pageNumber, initialImageIndex) {
     const perPage = optimalPerPage || 20;
-    const response = await fetch(`/?path=${currentPath}&page=${pageNumber}&per_page=${perPage}&fetch_images_only=true`);
+    const response = await fetch(`/?path=${currentPath}&page=${pageNumber}&per_page=${perPage}&fetch_images_only=true&root=${currentRoot}`);
     const data = await response.json();
 
     if (data.success) {
@@ -715,11 +724,11 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
                 a.setAttribute('data-type', 'directory');
                 a.setAttribute('data-folder', item.name);
                 a.setAttribute('title', item.name);
-                a.href = `/?path=${currentPath ? currentPath + '/' + item.name : item.name}`;
+                a.href = `/?path=${currentPath ? currentPath + '/' + item.name : item.name}&root=${currentRoot}`;
 
                 const previewHtml = item.first_image
                     ? `<div class="folder-preview">
-                        <img src="/thumbnail/${currentPath ? currentPath + '/' + item.name + '/' + item.first_image : item.name + '/' + item.first_image}" alt="${item.name}">
+                        <img src="/thumbnail/${currentPath ? currentPath + '/' + item.name + '/' + item.first_image : item.name + '/' + item.first_image}?root=${currentRoot}" alt="${item.name}">
                        </div>`
                     : `<span class="folder-icon">📁</span>`;
 
@@ -753,7 +762,7 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
                 div.innerHTML = `
                     <div class="thumbnail-wrapper">
                         <img
-                            src="/thumbnail/${currentPath ? currentPath + '/' + item.name : item.name}"
+                            src="/thumbnail/${currentPath ? currentPath + '/' + item.name : item.name}?root=${currentRoot}"
                             alt="${item.name}"
                             class="thumbnail-img"
                         >
@@ -767,7 +776,7 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
             }
         });
 
-        updateGalleryImages(data.items); // Update the galleryImages array and re-init event listeners
+        updateGalleryImages(data.items);
         currentPage = data.page;
         totalPages = data.total_pages;
         currentImageIndex = (initialImageIndex === -1) ? galleryImages.length - 1 : initialImageIndex;
@@ -793,14 +802,14 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
 
             // Previous button - always visible, disabled if on first page
             const prevDisabled = currentPage <= 1 ? 'disabled' : '';
-            newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}&per_page=${perPage}" class="${prevDisabled}">← Previous</a>`;
+            newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage - 1}&per_page=${perPage}&root=${currentRoot}" class="${prevDisabled}">← Previous</a>`;
 
             newPaginationHtml += `<span class="current">${currentPage}</span>`;
             newPaginationHtml += `<span>of ${totalPages}</span>`;
 
             // Next button - always visible, disabled if on last page
             const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
-            newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}&per_page=${perPage}" class="${nextDisabled}">Next →</a>`;
+            newPaginationHtml += `<a href="/?path=${currentPath}&page=${currentPage + 1}&per_page=${perPage}&root=${currentRoot}" class="${nextDisabled}">Next →</a>`;
 
             paginationDiv.innerHTML = newPaginationHtml;
         }
@@ -840,7 +849,7 @@ function recordImageView(imageName) {
     const currentPath = "{{ current_path }}";
     // Silent request to record view
     const imagePath = currentPath ? `${currentPath}/${imageName}` : imageName;
-    fetch(`/image/${imagePath}`, {
+    fetch(`/image/${imagePath}?root=${currentRoot}`, {
         method: 'HEAD'
     }).catch(() => {
         // Ignore errors in view tracking
@@ -861,7 +870,7 @@ async function trashImage(imageName, event, fromLightbox = false) {
     const currentPath = "{{ current_path }}";
 
     try {
-        const response = await fetch(`/trash?path=${currentPath}`, {
+        const response = await fetch(`/trash?path=${currentPath}&root=${currentRoot}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -899,7 +908,7 @@ async function trashImage(imageName, event, fromLightbox = false) {
                     return;
                 } else if (currentPage > 1) {
                     // Not in lightbox, just navigate to previous page
-                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}`;
+                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
                     return;
                 } else {
                     // First page is empty, just reload
@@ -991,7 +1000,7 @@ async function trashImage(imageName, event, fromLightbox = false) {
 async function fetchReplacementImage() {
     try {
         const perPage = optimalPerPage || 20;
-        const response = await fetch(`/?path=${currentPath}&page=${currentPage}&per_page=${perPage}&fetch_images_only=true`);
+        const response = await fetch(`/?path=${currentPath}&page=${currentPage}&per_page=${perPage}&fetch_images_only=true&root=${currentRoot}`);
         const data = await response.json();
 
         if (data.success) {
@@ -1012,7 +1021,7 @@ async function fetchReplacementImage() {
                     div.innerHTML = `
                         <div class="thumbnail-wrapper">
                             <img
-                                src="/thumbnail/${currentPath ? currentPath + '/' + item.name : item.name}"
+                                src="/thumbnail/${currentPath ? currentPath + '/' + item.name : item.name}?root=${currentRoot}"
                                 alt="${item.name}"
                                 class="thumbnail-img"
                             >
@@ -1027,7 +1036,7 @@ async function fetchReplacementImage() {
                     // Add to galleryImages array
                     galleryImages.push({
                         name: item.name,
-                        url: `/image/${currentPath ? currentPath + '/' + item.name : item.name}`
+                        url: `/image/${currentPath ? currentPath + '/' + item.name : item.name}?root=${currentRoot}`
                     });
                 });
 
@@ -1058,7 +1067,7 @@ async function deleteFolder(folderName, event) {
     const currentPath = "{{ current_path }}";
 
     try {
-        const response = await fetch(`/folder/delete?path=${currentPath}`, {
+        const response = await fetch(`/folder/delete?path=${currentPath}&root=${currentRoot}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1079,7 +1088,7 @@ async function deleteFolder(folderName, event) {
             if (remainingItems.length === 0) {
                 // Reload the page to show empty state or previous page
                 if (currentPage > 1) {
-                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}`;
+                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
                 } else {
                     location.reload();
                 }
@@ -1107,7 +1116,7 @@ async function deleteCurrentFolder() {
     const parentPath = pathParts.join('/'); // Join remaining segments
 
     try {
-        const response = await fetch(`/folder/delete?path=${parentPath}`, {
+        const response = await fetch(`/folder/delete?path=${parentPath}&root=${currentRoot}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1119,9 +1128,9 @@ async function deleteCurrentFolder() {
         if (data.success) {
             // Navigate up to parent directory
             if (parentPath) {
-                window.location.href = `/?path=${parentPath}`;
+                window.location.href = `/?path=${parentPath}&root=${currentRoot}`;
             } else {
-                window.location.href = '/';
+                window.location.href = `/?root=${currentRoot}`;
             }
         } else {
             showToast(data.error || 'Error deleting folder', 'error');
@@ -1140,7 +1149,7 @@ async function moveUpCurrentImage(event) {
     const imagePath = currentPath ? `${currentPath}/${currentImage.name}` : currentImage.name;
 
     try {
-        const response = await fetch('/move-up', {
+        const response = await fetch(`/move-up?root=${currentRoot}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1288,10 +1297,10 @@ document.addEventListener('keydown', function(e) {
                 // In a subfolder - go to parent
                 const pathParts = currentPath.split('/').slice(0, -1);
                 const parentPath = pathParts.join('/');
-                window.location.href = `/?path=${parentPath}`;
+                window.location.href = `/?path=${parentPath}&root=${currentRoot}`;
             } else {
                 // At root - go to trash
-                window.location.href = '/trash-view';
+                window.location.href = `/trash-view?root=${currentRoot}`;
             }
         }
         return;
@@ -1304,14 +1313,14 @@ document.addEventListener('keydown', function(e) {
                 // Navigate to previous page
                 if (currentPage > 1) {
                     e.preventDefault();
-                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}`;
+                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
                 }
                 break;
             case 'ArrowRight':
                 // Navigate to next page
                 if (currentPage < totalPages) {
                     e.preventDefault();
-                    window.location.href = `/?path=${currentPath}&page=${currentPage + 1}&per_page=${optimalPerPage || 20}`;
+                    window.location.href = `/?path=${currentPath}&page=${currentPage + 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
                 }
                 break;
             case 'Enter':
@@ -1325,7 +1334,7 @@ document.addEventListener('keydown', function(e) {
             case 'C':
                 // Navigate to carousel
                 e.preventDefault();
-                window.location.href = `/carousel?path=${currentPath}`;
+                window.location.href = `/carousel?path=${currentPath}&root=${currentRoot}`;
                 break;
         }
         return;
@@ -1367,7 +1376,7 @@ document.addEventListener('keydown', function(e) {
         case 'C':
             // Navigate to carousel
             e.preventDefault();
-            window.location.href = `/carousel?path=${currentPath}`;
+            window.location.href = `/carousel?path=${currentPath}&root=${currentRoot}`;
             break;
     }
 });

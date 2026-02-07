@@ -32,7 +32,7 @@ class FileOperations:
             for entry in self.current_dir.iterdir():
                 if entry.is_file() and ThumbnailService.is_image_file(str(entry)):
                     images.append(str(entry))
-        except PermissionError:
+        except (PermissionError, FileNotFoundError, OSError):
             pass
 
         return sorted(images)
@@ -48,7 +48,7 @@ class FileOperations:
             for entry in self.current_dir.iterdir():
                 if entry.is_dir() and not entry.name.startswith('.') and entry.name != 'trash':
                     subdirs.append(entry.name)
-        except PermissionError:
+        except (PermissionError, FileNotFoundError, OSError):
             pass
 
         return sorted(subdirs)
@@ -189,7 +189,7 @@ class FileOperations:
 
                 # Count total items (subfolders + images)
                 item_count = len(images_in_subdir) + len(subdirs_in_subdir)
-            except PermissionError:
+            except (PermissionError, FileNotFoundError, OSError):
                 pass
 
             items.append({
