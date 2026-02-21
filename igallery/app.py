@@ -2,6 +2,7 @@
 
 import io
 import os
+import time as _time
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +36,117 @@ def _collect_all_image_paths_in_dir(directory: Path, exclude_dirs: set[str] = No
                 images.add(str(file_path.resolve()))
 
     return images
+
+
+class _DirectoryImageCache:
+    """Caches recursive image listings, validated by directory mtimes.
+
+    On cache hit, stats only the directories (not individual files) to check
+    for changes.  A short debounce window coalesces rapid-fire requests
+    (e.g. carousel current + preload) without any stat calls at all.
+    """
+
+    def __init__(self, debounce_seconds: float = 1.0):
+        self._cache: dict[tuple, dict] = {}
+        self._lock = threading.Lock()
+        self._debounce = debounce_seconds
+
+    def get_images(self, directory: Path, exclude_dirs: set[str] | None = None) -> set[str]:
+        exclude_dirs = exclude_dirs or set()
+        key = (str(directory.resolve()), frozenset(exclude_dirs))
+        now = _time.monotonic()
+
+        with self._lock:
+            entry = self._cache.get(key)
+
+            # Debounce: skip validation if checked very recently
+            if entry and (now - entry['checked_at']) < self._debounce:
+                return entry['images']
+
+            # Validate cached directory mtimes
+            if entry and self._validate_mtimes(entry['dir_mtimes']):
+                entry['checked_at'] = now
+                return entry['images']
+
+        # Cache miss or stale — walk outside the lock
+        images, dir_mtimes = self._walk(directory, exclude_dirs)
+
+        with self._lock:
+            self._cache[key] = {
+                'images': images,
+                'dir_mtimes': dir_mtimes,
+                'checked_at': _time.monotonic(),
+            }
+
+        return images
+
+    def remove_image(self, image_path: str):
+        """Patch the cache after removing a file (e.g. trash).
+
+        Updates every cache entry that contains this path so that the
+        next mtime validation won't see a stale directory and re-walk.
+        """
+        resolved = str(Path(image_path).resolve())
+        parent = str(Path(image_path).resolve().parent)
+
+        with self._lock:
+            for entry in self._cache.values():
+                if resolved in entry['images']:
+                    entry['images'].discard(resolved)
+                    if parent in entry['dir_mtimes']:
+                        try:
+                            entry['dir_mtimes'][parent] = os.stat(parent).st_mtime
+                        except OSError:
+                            pass
+
+    def move_image(self, old_path: str, new_path: str):
+        """Patch the cache after moving a file (e.g. move-up).
+
+        Swaps the old path for the new one and refreshes the mtimes of
+        both affected directories.
+        """
+        old_resolved = str(Path(old_path).resolve())
+        new_resolved = str(Path(new_path).resolve())
+        old_parent = str(Path(old_resolved).parent)
+        new_parent = str(Path(new_resolved).parent)
+
+        with self._lock:
+            for entry in self._cache.values():
+                if old_resolved in entry['images']:
+                    entry['images'].discard(old_resolved)
+                    entry['images'].add(new_resolved)
+                    for d in (old_parent, new_parent):
+                        if d in entry['dir_mtimes']:
+                            try:
+                                entry['dir_mtimes'][d] = os.stat(d).st_mtime
+                            except OSError:
+                                pass
+
+    @staticmethod
+    def _validate_mtimes(dir_mtimes: dict[str, float]) -> bool:
+        for dir_path, cached_mtime in dir_mtimes.items():
+            try:
+                if os.stat(dir_path).st_mtime != cached_mtime:
+                    return False
+            except OSError:
+                return False
+        return True
+
+    @staticmethod
+    def _walk(directory: Path, exclude_dirs: set[str]) -> tuple[set[str], dict[str, float]]:
+        images: set[str] = set()
+        dir_mtimes: dict[str, float] = {}
+
+        for root, dirs, files in os.walk(directory):
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            dir_mtimes[root] = os.stat(root).st_mtime
+
+            for file in files:
+                file_path = Path(root) / file
+                if ThumbnailService.is_image_file(str(file_path)):
+                    images.add(str(file_path.resolve()))
+
+        return images, dir_mtimes
 
 
 def create_app(
@@ -84,6 +196,9 @@ def create_app(
     app.config['GALLERY_ROOT'] = roots[0]['path']
     app.config['GALLERY_ROOTS'] = roots
     app.config['DB_PATH'] = roots[0]['db_path']
+
+    # Cached directory walker for carousel routes
+    image_cache = _DirectoryImageCache()
 
     # Track cleanup status per root
     cleanup_status = {'in_progress': False, 'last_run': None}
@@ -335,7 +450,7 @@ def create_app(
         preload = request.args.get('preload', 'false') == 'true'
 
         current_dir = validate_gallery_path(relative_path, active)
-        gallery_images = _collect_all_image_paths_in_dir(current_dir, exclude_dirs={'trash'})
+        gallery_images = image_cache.get_images(current_dir, exclude_dirs={'trash'})
         images = sorted(list(gallery_images))
 
         if not images:
@@ -370,7 +485,7 @@ def create_app(
         preload = request.args.get('preload', 'false') == 'true'
 
         current_dir = validate_gallery_path(relative_path, active)
-        gallery_images = _collect_all_image_paths_in_dir(current_dir, exclude_dirs={'trash'})
+        gallery_images = image_cache.get_images(current_dir, exclude_dirs={'trash'})
         images = sorted(list(gallery_images))
 
         if not images:
@@ -417,8 +532,10 @@ def create_app(
             return jsonify({'error': 'Image not found'}), 404
 
         try:
+            resolved_before = str(image_path.resolve())
             trash_path = file_ops.move_to_trash(str(image_path))
             db.add_to_trash(trash_path, str(image_path))
+            image_cache.remove_image(resolved_before)
             return jsonify({'success': True})
         except Exception as e:
             app.logger.error(f"Error moving to trash: {e}")
@@ -680,6 +797,7 @@ def create_app(
 
             old_path_str = str(full_image_path.resolve())
             db.update_image_path(old_path_str, new_path)
+            image_cache.move_image(old_path_str, new_path)
 
             return jsonify({'success': True, 'new_path': new_path})
         except ValueError as e:
