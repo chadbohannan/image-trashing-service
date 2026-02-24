@@ -162,3 +162,37 @@ class TestDatabase:
         """Test retrieving nonexistent trash item returns None."""
         item = temp_db.get_trash_item("/nonexistent/path.jpg")
         assert item is None
+
+    def test_bulk_delete_trash(self, temp_db):
+        """Test bulk deletion of trash records from all tables."""
+        paths = [f"/trash/image{i}.jpg" for i in range(5)]
+        for p in paths:
+            temp_db.add_to_trash(p, p.replace("/trash/", "/gallery/"))
+            temp_db.save_thumbnail(p, b"thumb", 100.0, 1024)
+            temp_db.record_view(p)
+
+        temp_db.bulk_delete_trash(paths)
+
+        assert temp_db.list_trashed_images() == []
+        for p in paths:
+            assert temp_db.get_thumbnail(p, 100.0) is None
+            assert temp_db.get_trash_item(p) is None
+
+    def test_bulk_delete_trash_empty(self, temp_db):
+        """Test bulk delete with empty list is a no-op."""
+        temp_db.bulk_delete_trash([])
+
+    def test_sync_images_idempotent(self, temp_db):
+        """Test that calling sync_images twice doesn't duplicate or modify rows."""
+        images = ["/img1.jpg", "/img2.jpg"]
+        temp_db.sync_images(images)
+
+        # View one image
+        temp_db.record_view(images[0])
+
+        # Sync again — should not reset the view
+        temp_db.sync_images(images)
+
+        result = temp_db.get_least_recently_viewed(images)
+        # img2 was never viewed, so it should still be returned
+        assert result == images[1]

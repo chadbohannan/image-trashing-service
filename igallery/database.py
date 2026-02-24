@@ -18,6 +18,7 @@ Cache validation timestamps (track source file changes):
 """
 
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Tuple
@@ -34,6 +35,7 @@ class Database:
             db_path: Path to SQLite database file
         """
         self.db_path = db_path
+        self._local = threading.local()
         self._init_schema()
 
     def _init_schema(self):
@@ -154,29 +156,53 @@ class Database:
 
         conn.commit()
 
+    def _get_or_create_connection(self):
+        """Get existing thread-local connection or create a new one.
+
+        Reuses a persistent connection per thread. Schema is only checked
+        when a new connection is created, not on every call.
+        """
+        conn = getattr(self._local, 'conn', None)
+        if conn is not None:
+            return conn
+
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        # Check schema only once per new connection
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='thumbnails'"
+        )
+        if not cursor.fetchone():
+            self._init_schema_on_connection(conn)
+        self._local.conn = conn
+        return conn
+
+    def _close_connection(self):
+        """Close the thread-local connection if it exists."""
+        conn = getattr(self._local, 'conn', None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            self._local.conn = None
+
     @contextmanager
     def _get_connection(self):
         """Context manager for database connections.
 
-        Automatically reinitializes schema if database was deleted/corrupted.
-        Raises sqlite3.OperationalError if parent directory doesn't exist
-        (e.g. unmounted device).
+        Uses a persistent thread-local connection. On error, closes and
+        retries once to handle database deletion/corruption.
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         try:
-            # Always check if schema exists and create if missing
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='thumbnails'"
-            )
-            if not cursor.fetchone():
-                # Schema missing - reinitialize
-                self._init_schema_on_connection(conn)
-
+            conn = self._get_or_create_connection()
             yield conn
-        finally:
-            conn.close()
+        except sqlite3.OperationalError:
+            self._close_connection()
+            conn = self._get_or_create_connection()
+            yield conn
 
     def get_thumbnail(self, image_path: str, image_mtime: float) -> Optional[bytes]:
         """Get cached thumbnail data if it exists and is up-to-date.
@@ -243,40 +269,33 @@ class Database:
         - last_viewed_at = NULL (indicates never viewed)
         - file_created_at = st_mtime (immutable creation timestamp)
 
-        For images, st_mtime effectively equals creation time since image files
-        are rarely modified after creation.
-
-        Existing images are NOT updated - timestamps remain immutable.
+        Uses INSERT OR IGNORE to skip existing rows in a single batch,
+        avoiding per-image SELECT queries.
 
         Args:
             image_paths: List of all image paths to sync
         """
+        if not image_paths:
+            return
+
         with self._get_connection() as conn:
             cursor = conn.cursor()
 
+            rows = []
             for path in image_paths:
-                # Check if record exists
-                cursor.execute(
-                    "SELECT image_path FROM image_metadata WHERE image_path = ?",
-                    (path,)
-                )
-                if not cursor.fetchone():
-                    # New image - insert with NULL last_viewed_at (never viewed)
-                    # Use st_mtime as creation time (images aren't modified after creation)
-                    try:
-                        mtime = Path(path).stat().st_mtime
-                    except (OSError, FileNotFoundError):
-                        # File doesn't exist - use epoch time
-                        mtime = 0.0
+                try:
+                    mtime = Path(path).stat().st_mtime
+                except (OSError, FileNotFoundError):
+                    mtime = 0.0
+                rows.append((path, mtime))
 
-                    cursor.execute(
-                        """
-                        INSERT INTO image_metadata (image_path, last_viewed_at, file_created_at)
-                        VALUES (?, NULL, ?)
-                        """,
-                        (path, mtime)
-                    )
-
+            cursor.executemany(
+                """
+                INSERT OR IGNORE INTO image_metadata (image_path, last_viewed_at, file_created_at)
+                VALUES (?, NULL, ?)
+                """,
+                rows
+            )
             conn.commit()
 
     def record_view(self, image_path: str):
@@ -530,6 +549,39 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM trash WHERE trash_path = ?", (trash_path,))
+            conn.commit()
+
+    def bulk_delete_trash(self, trash_paths: list[str]):
+        """Delete all records associated with trashed images in a single transaction.
+
+        Removes entries from thumbnails, image_metadata, and trash tables
+        for all provided paths.
+
+        Args:
+            trash_paths: List of trash file paths to delete records for
+        """
+        if not trash_paths:
+            return
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # Chunk to stay under SQLite's parameter limit
+            chunk_size = 900
+            for i in range(0, len(trash_paths), chunk_size):
+                chunk = trash_paths[i:i + chunk_size]
+                placeholders = ','.join('?' * len(chunk))
+                cursor.execute(
+                    f"DELETE FROM thumbnails WHERE image_path IN ({placeholders})",
+                    chunk
+                )
+                cursor.execute(
+                    f"DELETE FROM image_metadata WHERE image_path IN ({placeholders})",
+                    chunk
+                )
+                cursor.execute(
+                    f"DELETE FROM trash WHERE trash_path IN ({placeholders})",
+                    chunk
+                )
             conn.commit()
 
     def get_trash_item(self, trash_path: str) -> dict | None:

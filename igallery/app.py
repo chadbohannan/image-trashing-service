@@ -50,8 +50,23 @@ class _DirectoryImageCache:
         self._cache: dict[tuple, dict] = {}
         self._lock = threading.Lock()
         self._debounce = debounce_seconds
+        self._generation: int = 0
+        # Tracks the most recent time remove_image/move_image mutated the cache.
+        # Used to detect when a concurrent mutation occurred during a walk so the
+        # stale walk result can be reconciled before being stored.
+        self._last_mutation_at: float = 0.0
 
     def get_images(self, directory: Path, exclude_dirs: set[str] | None = None) -> set[str]:
+        images, _gen = self.get_images_with_generation(directory, exclude_dirs)
+        return images
+
+    def get_images_with_generation(self, directory: Path, exclude_dirs: set[str] | None = None) -> tuple[set[str], int]:
+        """Get images and the cache generation counter.
+
+        The generation counter increments whenever the cache is refreshed
+        (i.e., the directory was re-walked). Callers can use this to detect
+        when the image list has changed and avoid redundant work.
+        """
         exclude_dirs = exclude_dirs or set()
         key = (str(directory.resolve()), frozenset(exclude_dirs))
         now = _time.monotonic()
@@ -61,24 +76,40 @@ class _DirectoryImageCache:
 
             # Debounce: skip validation if checked very recently
             if entry and (now - entry['checked_at']) < self._debounce:
-                return entry['images']
+                return entry['images'], entry['generation']
 
             # Validate cached directory mtimes
             if entry and self._validate_mtimes(entry['dir_mtimes']):
                 entry['checked_at'] = now
-                return entry['images']
+                return entry['images'], entry['generation']
 
-        # Cache miss or stale — walk outside the lock
+        # Cache miss or stale — walk outside the lock.
+        # Record the time before walking so we can detect concurrent mutations.
+        walk_start = _time.monotonic()
         images, dir_mtimes = self._walk(directory, exclude_dirs)
 
         with self._lock:
+            self._generation += 1
+            gen = self._generation
+
+            # Race-condition guard: if remove_image/move_image patched the cache
+            # while the walk was running, the walk may have observed files that
+            # were deleted (or moved) after the walk started but before we store
+            # here.  The walk can also capture the post-deletion directory mtime,
+            # making the stale result look permanently fresh.  Intersecting with
+            # the already-patched cache set ensures those files stay excluded.
+            existing = self._cache.get(key)
+            if existing is not None and self._last_mutation_at >= walk_start:
+                images = images & existing['images']
+
             self._cache[key] = {
                 'images': images,
                 'dir_mtimes': dir_mtimes,
                 'checked_at': _time.monotonic(),
+                'generation': gen,
             }
 
-        return images
+        return images, gen
 
     def remove_image(self, image_path: str):
         """Patch the cache after removing a file (e.g. trash).
@@ -90,6 +121,7 @@ class _DirectoryImageCache:
         parent = str(Path(image_path).resolve().parent)
 
         with self._lock:
+            self._last_mutation_at = _time.monotonic()
             for entry in self._cache.values():
                 if resolved in entry['images']:
                     entry['images'].discard(resolved)
@@ -111,6 +143,7 @@ class _DirectoryImageCache:
         new_parent = str(Path(new_resolved).parent)
 
         with self._lock:
+            self._last_mutation_at = _time.monotonic()
             for entry in self._cache.values():
                 if old_resolved in entry['images']:
                     entry['images'].discard(old_resolved)
@@ -136,15 +169,16 @@ class _DirectoryImageCache:
     def _walk(directory: Path, exclude_dirs: set[str]) -> tuple[set[str], dict[str, float]]:
         images: set[str] = set()
         dir_mtimes: dict[str, float] = {}
+        root_str = str(directory.resolve())
 
-        for root, dirs, files in os.walk(directory):
+        for root, dirs, files in os.walk(root_str):
             dirs[:] = [d for d in dirs if d not in exclude_dirs]
             dir_mtimes[root] = os.stat(root).st_mtime
 
             for file in files:
-                file_path = Path(root) / file
-                if ThumbnailService.is_image_file(str(file_path)):
-                    images.add(str(file_path.resolve()))
+                file_path = os.path.join(root, file)
+                if ThumbnailService.is_image_file(file_path):
+                    images.add(file_path)
 
         return images, dir_mtimes
 
@@ -199,6 +233,10 @@ def create_app(
 
     # Cached directory walker for carousel routes
     image_cache = _DirectoryImageCache()
+
+    # Track last-synced generation per (directory, db) to skip redundant sync_images
+    _last_synced_generation: dict[tuple, int] = {}
+    _sync_lock = threading.Lock()
 
     # Track cleanup status per root
     cleanup_status = {'in_progress': False, 'last_run': None}
@@ -285,22 +323,29 @@ def create_app(
         except Exception:
             abort(400)
 
+    _roots_avail_cache = {'data': None, 'time': 0.0}
+    _roots_avail_ttl = 5.0  # seconds
+
     def _roots_with_availability():
-        """Return roots list with current availability status."""
+        """Return roots list with current availability status (cached 5s)."""
+        now = _time.monotonic()
+        if _roots_avail_cache['data'] is not None and (now - _roots_avail_cache['time']) < _roots_avail_ttl:
+            return _roots_avail_cache['data']
+
         def _is_available(path):
             try:
-                # Try to actually read the directory; Path.exists() can
-                # return False for FUSE/encrypted mount points even when
-                # they are accessible.
                 next(Path(path).iterdir(), None)
                 return True
             except (PermissionError, OSError):
                 return False
 
-        return [
+        result = [
             {**r, 'available': _is_available(r['path'])}
             for r in roots
         ]
+        _roots_avail_cache['data'] = result
+        _roots_avail_cache['time'] = now
+        return result
 
     @app.route('/')
     def index():
@@ -376,11 +421,12 @@ def create_app(
         active = get_active_root()
         full_image_path = validate_gallery_path(image_path, active)
 
-        if not full_image_path.exists():
+        try:
+            stat_result = os.stat(str(full_image_path))
+        except OSError:
             abort(404)
 
-        # Get image modification time for cache validation
-        image_mtime = os.path.getmtime(str(full_image_path))
+        image_mtime = stat_result.st_mtime
         last_modified = datetime.fromtimestamp(image_mtime, timezone.utc)
 
         # Check if client has a cached version
@@ -439,6 +485,16 @@ def create_app(
             root_index=root_index,
         )
 
+    def _sync_if_needed(db, images, current_dir):
+        """Only call sync_images when the image cache generation has changed."""
+        sync_key = (str(current_dir), id(db))
+        with _sync_lock:
+            last_gen = _last_synced_generation.get(sync_key)
+        if last_gen != images[1]:
+            db.sync_images(images[0])
+            with _sync_lock:
+                _last_synced_generation[sync_key] = images[1]
+
     @app.route('/carousel/next')
     def carousel_next():
         """Get next image for carousel (slideshow mode)."""
@@ -450,13 +506,15 @@ def create_app(
         preload = request.args.get('preload', 'false') == 'true'
 
         current_dir = validate_gallery_path(relative_path, active)
-        gallery_images = image_cache.get_images(current_dir, exclude_dirs={'trash'})
-        images = sorted(list(gallery_images))
+        gallery_images, generation = image_cache.get_images_with_generation(
+            current_dir, exclude_dirs={'trash'}
+        )
+        images = list(gallery_images)
 
         if not images:
             return jsonify({'error': 'No images found'}), 404
 
-        db.sync_images(images)
+        _sync_if_needed(db, (images, generation), current_dir)
         selected_image = db.get_least_recently_viewed(images)
 
         if not preload:
@@ -485,13 +543,15 @@ def create_app(
         preload = request.args.get('preload', 'false') == 'true'
 
         current_dir = validate_gallery_path(relative_path, active)
-        gallery_images = image_cache.get_images(current_dir, exclude_dirs={'trash'})
-        images = sorted(list(gallery_images))
+        gallery_images, generation = image_cache.get_images_with_generation(
+            current_dir, exclude_dirs={'trash'}
+        )
+        images = list(gallery_images)
 
         if not images:
             return jsonify({'error': 'No images found'}), 404
 
-        db.sync_images(images)
+        _sync_if_needed(db, (images, generation), current_dir)
         selected_image = db.get_random_image(images)
 
         if not preload:
@@ -584,10 +644,12 @@ def create_app(
         trash_dir = Path(active['path']) / "trash"
         image_path = trash_dir / relative_path
 
-        if not image_path.exists():
+        try:
+            stat_result = os.stat(str(image_path))
+        except OSError:
             abort(404)
 
-        image_mtime = os.path.getmtime(str(image_path))
+        image_mtime = stat_result.st_mtime
         last_modified = datetime.fromtimestamp(image_mtime, timezone.utc)
 
         if_modified_since = request.headers.get('If-Modified-Since')
@@ -688,13 +750,11 @@ def create_app(
 
             for item in trashed_images:
                 trash_path = item['trash_path']
-
                 if Path(trash_path).exists():
                     Path(trash_path).unlink()
 
-                db.delete_thumbnail_record(trash_path)
-                db.delete_metadata_record(trash_path)
-                db.remove_from_trash(trash_path)
+            trash_paths = [item['trash_path'] for item in trashed_images]
+            db.bulk_delete_trash(trash_paths)
 
             deleted_count = len(trashed_images)
 
