@@ -161,6 +161,7 @@
         align-items: center;
         opacity: 0;
         transition: opacity 0.2s;
+        z-index: 3;
     }
 
     .thumbnail-item:hover .thumbnail-actions {
@@ -418,6 +419,26 @@
     .shortcuts-hint.visible {
         opacity: 1;
     }
+
+    .thumbnail-item.kb-active {
+        box-shadow: 0 0 0 3px cyan;
+        z-index: 5;
+    }
+
+    .thumbnail-item.kb-selected::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-color: rgba(0, 200, 255, 0.25);
+        pointer-events: none;
+        z-index: 2;
+        border-radius: 8px;
+    }
+
+    .thumbnail-item.kb-selected {
+        box-shadow: 0 0 0 3px cyan;
+        z-index: 5;
+    }
 </style>
 {% endblock %}
 
@@ -606,11 +627,151 @@ let lastWheelTime = 0;
 let lastWheelDirection = 0; // Track last scroll direction: 1 for down, -1 for up
 const WHEEL_THROTTLE_MS = 300; // Minimum time between wheel navigations
 
+// Selection model state
+let activeIndex = 0;
+let activeVisible = false;   // highlight only after first arrow key
+let selectedIndices = new Set();
+let shiftPressedAlone = false;
+let subgalleryMode = false;
+let savedGalleryImages = null;
+
 function initLightboxThumbnails() {
-    // Only attach handlers to image thumbnails, not directories
+    const allItems = getAllItems();
     const imageThumbnails = document.querySelectorAll('.thumbnail-item[data-type="image"] .thumbnail-img');
-    imageThumbnails.forEach((thumbnail, index) => {
-        thumbnail.onclick = (event) => openLightbox(index, event);
+    imageThumbnails.forEach((thumbnail, galleryIdx) => {
+        const thumbnailItem = thumbnail.closest('.thumbnail-item');
+        const allIdx = allItems.indexOf(thumbnailItem);
+        thumbnail.onclick = (e) => {
+            if (e.shiftKey) {
+                shiftPressedAlone = false;
+                selectRange(activeIndex, allIdx);
+                setActiveIndex(allIdx);
+            } else {
+                setActiveIndex(allIdx, false);
+                openLightbox(galleryIdx, e);
+            }
+        };
+    });
+    initDirectoryHandlers();
+}
+
+function getAllItems() {
+    return Array.from(document.querySelectorAll('#thumbnail-grid .thumbnail-item'));
+}
+
+function getGridColumns() {
+    const grid = document.getElementById('thumbnail-grid');
+    if (!grid) return 1;
+    const cols = window.getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+    return cols || 1;
+}
+
+function setActiveIndex(idx, showHighlight = true) {
+    const items = getAllItems();
+    if (items.length === 0) return;
+    idx = Math.max(0, Math.min(idx, items.length - 1));
+    if (activeVisible) {
+        items.forEach(item => item.classList.remove('kb-active'));
+    }
+    activeIndex = idx;
+    if (showHighlight) {
+        activeVisible = true;
+        items[idx].classList.add('kb-active');
+        items[idx].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+function toggleSelected(idx) {
+    const items = getAllItems();
+    if (idx < 0 || idx >= items.length) return;
+    const item = items[idx];
+    if (item.getAttribute('data-type') !== 'image') return;
+    if (selectedIndices.has(idx)) {
+        selectedIndices.delete(idx);
+        item.classList.remove('kb-selected');
+    } else {
+        selectedIndices.add(idx);
+        item.classList.add('kb-selected');
+    }
+}
+
+function selectRange(from, to) {
+    const items = getAllItems();
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    for (let i = lo; i <= hi; i++) {
+        if (i < 0 || i >= items.length) continue;
+        const item = items[i];
+        if (item.getAttribute('data-type') !== 'image') continue;
+        selectedIndices.add(i);
+        item.classList.add('kb-selected');
+    }
+}
+
+function clearSelection() {
+    const items = getAllItems();
+    items.forEach(item => item.classList.remove('kb-selected'));
+    selectedIndices.clear();
+}
+
+function resetSelectionState() {
+    clearSelection();
+    activeIndex = 0;
+    activeVisible = false;
+    getAllItems().forEach(item => item.classList.remove('kb-active'));
+}
+
+function activateCurrentItem() {
+    const items = getAllItems();
+    if (items.length === 0) return;
+    const item = items[activeIndex];
+    if (!item) return;
+    if (item.getAttribute('data-type') === 'image') {
+        const imageItems = Array.from(document.querySelectorAll('.thumbnail-item[data-type="image"]'));
+        const galleryIdx = imageItems.indexOf(item);
+        if (galleryIdx !== -1) openLightbox(galleryIdx);
+    } else {
+        item.click();
+    }
+}
+
+function openSubgallery() {
+    if (selectedIndices.size === 0) return;
+    const items = getAllItems();
+    savedGalleryImages = galleryImages.slice();
+    subgalleryMode = true;
+    const selectedNames = new Set();
+    selectedIndices.forEach(idx => {
+        const item = items[idx];
+        if (item && item.getAttribute('data-type') === 'image') {
+            selectedNames.add(item.getAttribute('data-image'));
+        }
+    });
+    galleryImages = savedGalleryImages.filter(img => selectedNames.has(img.name));
+    if (galleryImages.length === 0) {
+        galleryImages = savedGalleryImages;
+        savedGalleryImages = null;
+        subgalleryMode = false;
+        return;
+    }
+    openLightbox(0);
+}
+
+function initDirectoryHandlers() {
+    const allItems = getAllItems();
+    const dirItems = document.querySelectorAll('.thumbnail-item[data-type="directory"]');
+    dirItems.forEach(item => {
+        const allIdx = allItems.indexOf(item);
+        item.onclick = (e) => {
+            if (e.shiftKey) {
+                e.preventDefault();
+                shiftPressedAlone = false;
+                selectRange(activeIndex, allIdx);
+                setActiveIndex(allIdx);
+            } else {
+                setActiveIndex(allIdx, false);
+            }
+        };
     });
 }
 
@@ -641,6 +802,12 @@ function openLightbox(index, event) {
 function closeLightbox() {
     const lightbox = document.getElementById('lightbox');
     lightbox.classList.remove('active');
+    if (subgalleryMode && savedGalleryImages) {
+        galleryImages = savedGalleryImages;
+        savedGalleryImages = null;
+        subgalleryMode = false;
+        initLightboxThumbnails();
+    }
 }
 
 function updateLightboxImage() {
@@ -777,6 +944,7 @@ async function loadImagesForPage(pageNumber, initialImageIndex) {
         });
 
         updateGalleryImages(data.items);
+        resetSelectionState();
         currentPage = data.page;
         totalPages = data.total_pages;
         currentImageIndex = (initialImageIndex === -1) ? galleryImages.length - 1 : initialImageIndex;
@@ -880,6 +1048,12 @@ async function trashImage(imageName, event, fromLightbox = false) {
         const data = await response.json();
 
         if (data.success) {
+            clearSelection();
+            if (subgalleryMode && savedGalleryImages) {
+                const savedIdx = savedGalleryImages.findIndex(img => img.name === imageName);
+                if (savedIdx !== -1) savedGalleryImages.splice(savedIdx, 1);
+            }
+
             // Remove thumbnail from page
             const item = document.querySelector(`[data-image="${imageName}"]`);
             if (item) {
@@ -1159,6 +1333,12 @@ async function moveUpCurrentImage(event) {
         const data = await response.json();
 
         if (data.success) {
+            clearSelection();
+            if (subgalleryMode && savedGalleryImages) {
+                const savedIdx = savedGalleryImages.findIndex(img => img.name === currentImage.name);
+                if (savedIdx !== -1) savedGalleryImages.splice(savedIdx, 1);
+            }
+
             // Remove image from current view (same logic as trash)
             const item = document.querySelector(`[data-image="${currentImage.name}"]`);
             if (item) {
@@ -1282,6 +1462,10 @@ function toggleFullscreen() {
 
 // Keyboard navigation
 document.addEventListener('keydown', function(e) {
+    // Shift lone-press tracking
+    if (e.key === 'Shift') { shiftPressedAlone = true; return; }
+    if (e.shiftKey) { shiftPressedAlone = false; }
+
     const lightbox = document.getElementById('lightbox');
     const lightboxActive = lightbox.classList.contains('active');
 
@@ -1292,15 +1476,19 @@ document.addEventListener('keydown', function(e) {
             // Close lightbox
             closeLightbox();
         } else {
-            // Navigate up
-            if (currentPath) {
-                // In a subfolder - go to parent
-                const pathParts = currentPath.split('/').slice(0, -1);
-                const parentPath = pathParts.join('/');
-                window.location.href = `/?path=${parentPath}&root=${currentRoot}`;
+            if (selectedIndices.size > 0) {
+                clearSelection();
             } else {
-                // At root - go to trash
-                window.location.href = `/trash-view?root=${currentRoot}`;
+                // Navigate up
+                if (currentPath) {
+                    // In a subfolder - go to parent
+                    const pathParts = currentPath.split('/').slice(0, -1);
+                    const parentPath = pathParts.join('/');
+                    window.location.href = `/?path=${parentPath}&root=${currentRoot}`;
+                } else {
+                    // At root - go to trash
+                    window.location.href = `/trash-view?root=${currentRoot}`;
+                }
             }
         }
         return;
@@ -1310,24 +1498,50 @@ document.addEventListener('keydown', function(e) {
     if (!lightboxActive) {
         switch(e.key) {
             case 'ArrowLeft':
-                // Navigate to previous page
-                if (currentPage > 1) {
-                    e.preventDefault();
-                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
-                }
+                e.preventDefault();
+                setActiveIndex(activeIndex - 1);
                 break;
             case 'ArrowRight':
-                // Navigate to next page
+                e.preventDefault();
+                setActiveIndex(activeIndex + 1);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setActiveIndex(activeIndex - getGridColumns());
+                break;
+            case 'ArrowDown':
+                e.preventDefault();
+                setActiveIndex(activeIndex + getGridColumns());
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (selectedIndices.size > 0) {
+                    openSubgallery();
+                } else {
+                    activateCurrentItem();
+                }
+                break;
+            case 'Delete':
+            case 'Backspace': {
+                const activeItem = getAllItems()[activeIndex];
+                if (activeItem && activeItem.getAttribute('data-type') === 'image') {
+                    e.preventDefault();
+                    trashImage(activeItem.getAttribute('data-image'), null, false);
+                }
+                break;
+            }
+            case 'n':
+            case 'N':
                 if (currentPage < totalPages) {
                     e.preventDefault();
                     window.location.href = `/?path=${currentPath}&page=${currentPage + 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
                 }
                 break;
-            case 'Enter':
-                // Open first image in lightbox
-                if (galleryImages.length > 0) {
+            case 'p':
+            case 'P':
+                if (currentPage > 1) {
                     e.preventDefault();
-                    openLightbox(0);
+                    window.location.href = `/?path=${currentPath}&page=${currentPage - 1}&per_page=${optimalPerPage || 20}&root=${currentRoot}`;
                 }
                 break;
             case 'c':
@@ -1379,6 +1593,21 @@ document.addEventListener('keydown', function(e) {
             window.location.href = `/carousel?path=${currentPath}&root=${currentRoot}`;
             break;
     }
+});
+
+// Shift alone → toggle selection on keyup
+document.addEventListener('keyup', e => {
+    if (e.key === 'Shift') {
+        const lightbox = document.getElementById('lightbox');
+        const lightboxActive = lightbox.classList.contains('active');
+        if (shiftPressedAlone && !lightboxActive) toggleSelected(activeIndex);
+        shiftPressedAlone = false;
+    }
+});
+
+// Suppress lone-Shift flag on Shift+click
+document.addEventListener('mousedown', e => {
+    if (e.shiftKey) shiftPressedAlone = false;
 });
 
 // Mouse wheel navigation for lightbox (throttled)
