@@ -1523,6 +1523,12 @@ document.addEventListener('keydown', function(e) {
                 break;
             case 'Delete':
             case 'Backspace': {
+                const deleteFolderBtn = document.querySelector('.delete-folder-btn');
+                if (deleteFolderBtn) {
+                    e.preventDefault();
+                    deleteFolderBtn.click();
+                    break;
+                }
                 const activeItem = getAllItems()[activeIndex];
                 if (activeItem && activeItem.getAttribute('data-type') === 'image') {
                     e.preventDefault();
