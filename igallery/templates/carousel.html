@@ -397,15 +397,27 @@ function nextImage() {
         });
 
         // Directly use the preloaded image element - it's already loaded!
-        image.src = preloadedImage.img.src;
+        // Guard against a stale preload (e.g. the file was trashed server-side
+        // between preload and display): if loading fails, fall back to a fresh
+        // server fetch so the user never gets stuck on a phantom broken image.
+        const preloadSrc = preloadedImage.img.src;
+        preloadedImage = null;
+
+        image.onerror = function() {
+            image.onerror = null;
+            image.classList.add('hidden');
+            loading.classList.remove('hidden');
+            // Remove the history entry we just added for the broken image
+            imageHistory.splice(historyIndex, 1);
+            historyIndex = imageHistory.length - 1;
+            nextImage();
+        };
+        image.src = preloadSrc;
         loading.classList.add('hidden');
         image.classList.remove('hidden');
 
         // Preload the next image after current one is displayed
         preloadNextImage();
-
-        // Clear the preloaded image
-        preloadedImage = null;
 
         return;
     }
@@ -649,12 +661,23 @@ function trashCurrentImage() {
                     fetch(displayUrl, { method: 'HEAD' }).catch(() => {});
 
                     // Directly use the preloaded image element - it's already loaded!
-                    image.src = preloadedImage.img.src;
+                    // Guard against a stale preload: if the server's image cache had
+                    // a race and returned an already-trashed file, onerror catches it
+                    // and falls back to a fresh fetch so we don't get stuck.
+                    const preloadSrc = preloadedImage.img.src;
+                    preloadedImage = null;
+
+                    image.onerror = function() {
+                        image.onerror = null;
+                        image.classList.add('hidden');
+                        loading.classList.remove('hidden');
+                        imageHistory.splice(historyIndex, 1);
+                        historyIndex = imageHistory.length - 1;
+                        nextImage();
+                    };
+                    image.src = preloadSrc;
                     loading.classList.add('hidden');
                     image.classList.remove('hidden');
-
-                    // Clear the preloaded image
-                    preloadedImage = null;
 
                     // Preload the next image
                     preloadNextImage();

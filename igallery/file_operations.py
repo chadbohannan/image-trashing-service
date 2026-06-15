@@ -164,39 +164,29 @@ class FileOperations:
                 - 'path': full path (for images)
                 - 'first_image': first image filename in directory (for directories only)
         """
-        subdirs = self.list_subdirectories()
-        images = self.list_images()
+        # Single-pass directory listing instead of two separate iterdir calls
+        subdirs = []
+        images = []
+        try:
+            for entry in self.current_dir.iterdir():
+                if entry.is_dir() and not entry.name.startswith('.') and entry.name != 'trash':
+                    subdirs.append(entry.name)
+                elif entry.is_file() and ThumbnailService.is_image_file(str(entry)):
+                    images.append(str(entry))
+        except (PermissionError, FileNotFoundError, OSError):
+            pass
 
-        # Build combined list: directories first, then images
+        subdirs.sort()
+        images.sort()
+
+        # Build combined list: directories first (without preview), then images
         items = []
         for subdir in subdirs:
-            # Get first image in subdirectory (non-recursive)
-            subdir_path = self.current_dir / subdir
-            first_image = None
-            item_count = 0
-            try:
-                # Get all images and sort to ensure consistent ordering
-                images_in_subdir = []
-                subdirs_in_subdir = []
-                for entry in subdir_path.iterdir():
-                    if entry.is_file() and ThumbnailService.is_image_file(str(entry)):
-                        images_in_subdir.append(entry.name)
-                    elif entry.is_dir() and not entry.name.startswith('.') and entry.name != 'trash':
-                        subdirs_in_subdir.append(entry.name)
-
-                if images_in_subdir:
-                    first_image = sorted(images_in_subdir)[0]
-
-                # Count total items (subfolders + images)
-                item_count = len(images_in_subdir) + len(subdirs_in_subdir)
-            except (PermissionError, FileNotFoundError, OSError):
-                pass
-
             items.append({
                 'type': 'directory',
                 'name': subdir,
-                'first_image': first_image,
-                'item_count': item_count
+                'first_image': None,
+                'item_count': 0,
             })
         for image_path in images:
             items.append({
@@ -218,8 +208,27 @@ class FileOperations:
 
         start_idx = (page - 1) * per_page
         end_idx = start_idx + per_page
+        page_items = items[start_idx:end_idx]
 
-        return items[start_idx:end_idx], total_pages
+        # Only scan subdirectory contents for items in the current page
+        for item in page_items:
+            if item['type'] == 'directory':
+                subdir_path = self.current_dir / item['name']
+                try:
+                    images_in_subdir = []
+                    subdirs_in_subdir = 0
+                    for entry in subdir_path.iterdir():
+                        if entry.is_file() and ThumbnailService.is_image_file(str(entry)):
+                            images_in_subdir.append(entry.name)
+                        elif entry.is_dir() and not entry.name.startswith('.') and entry.name != 'trash':
+                            subdirs_in_subdir += 1
+                    if images_in_subdir:
+                        item['first_image'] = sorted(images_in_subdir)[0]
+                    item['item_count'] = len(images_in_subdir) + subdirs_in_subdir
+                except (PermissionError, FileNotFoundError, OSError):
+                    pass
+
+        return page_items, total_pages
 
     def get_relative_path(self, full_path: str) -> str:
         """Get relative path from current directory.
